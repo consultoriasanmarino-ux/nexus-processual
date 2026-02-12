@@ -26,12 +26,29 @@ interface Props {
   aiOutputs: AiOutput[];
   onRefresh: () => void;
 }
+function formatCurrency(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  const num = parseInt(digits, 10) / 100;
+  return num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function currencyToNumber(formatted: string): number | null {
+  if (!formatted) return null;
+  const clean = formatted.replace(/\./g, "").replace(",", ".");
+  const num = parseFloat(clean);
+  return isNaN(num) ? null : num;
+}
 
 export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Props) {
   const [analyzing, setAnalyzing] = useState(false);
   const [context, setContext] = useState(caseData.company_context || DEFAULT_CONTEXT);
   const [savingCtx, setSavingCtx] = useState(false);
-  const [caseValueInput, setCaseValueInput] = useState((caseData as any).case_value ? String((caseData as any).case_value) : "");
+  const [caseValueInput, setCaseValueInput] = useState(
+    (caseData as any).case_value
+      ? Number((caseData as any).case_value).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : ""
+  );
   const [savingValue, setSavingValue] = useState(false);
 
   const summaryOutput = aiOutputs.find((o) => o.output_type === "case_summary");
@@ -50,7 +67,7 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
 
   const handleSaveCaseValue = async () => {
     setSavingValue(true);
-    const parsed = caseValueInput ? parseFloat(caseValueInput.replace(/[^\d.,]/g, "").replace(",", ".")) : null;
+    const parsed = currencyToNumber(caseValueInput);
     const { error } = await supabase.from("cases").update({ case_value: parsed } as any).eq("id", caseData.id);
     if (error) toast.error("Erro ao salvar valor.");
     else {
@@ -145,9 +162,9 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
               <span className="text-sm text-muted-foreground">Valor da causa: R$</span>
               <Input
                 value={caseValueInput}
-                onChange={(e) => setCaseValueInput(e.target.value)}
+                onChange={(e) => setCaseValueInput(formatCurrency(e.target.value))}
                 placeholder="0,00"
-                className="bg-secondary border-border h-7 w-32 text-sm"
+                className="bg-secondary border-border h-7 w-36 text-sm"
               />
               <Button
                 size="sm"
