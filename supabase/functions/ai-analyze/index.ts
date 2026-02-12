@@ -47,7 +47,7 @@ Responda APENAS com JSON válido (sem markdown, sem backticks):
   "court": "tribunal e vara",
   "process_number": "número do processo se encontrado",
   "distribution_date": "data de distribuição no formato YYYY-MM-DD se encontrada, senão vazio",
-  "case_value": "valor da causa em número decimal (ex: 50000.00). Procure 'Valor da Causa', 'Dá-se à causa o valor de', 'atribui à causa o valor de'. Geralmente aparece nas últimas páginas antes da assinatura. Se não encontrar, deixe vazio.",
+  "case_value": "valor da causa em número decimal (ex: 15160.82). ATENÇÃO: O valor da causa aparece nas ÚLTIMAS PÁGINAS do documento, geralmente na penúltima ou última página, ANTES da assinatura. Procure frases como: 'Dá-se à causa o valor de R$', 'Atribui-se à causa o valor de R$', 'Valor da causa: R$', 'dá à causa o valor de R$'. O valor vem escrito no corpo do texto (ex: 'Dá-se à causa o valor de R$ 15.160,82'). Converta para decimal com ponto (15160.82). Se não encontrar, deixe vazio.",
   "lawyers": [
     {"name": "nome do advogado", "oab": "número OAB com estado (ex: OAB/RS 12345)", "role": "advogado do autor | advogado do réu"}
   ],
