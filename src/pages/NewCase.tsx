@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Upload, Loader2, Sparkles, FileText, CheckCircle2, AlertTriangle, Phone } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import * as pdfjsLib from "pdfjs-dist";
 
@@ -64,6 +65,7 @@ export default function NewCase() {
   const [partnerFirm, setPartnerFirm] = useState("");
   const [partnerLawyer, setPartnerLawyer] = useState("");
   const [caseValue, setCaseValue] = useState("");
+  const [isDanosMorais, setIsDanosMorais] = useState(false);
 
   const extractTextFromPdf = async (file: File): Promise<string> => {
     const arrayBuffer = await file.arrayBuffer();
@@ -379,7 +381,22 @@ export default function NewCase() {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Valor da causa (R$)</Label>
-                  <Input value={caseValue} onChange={(e) => setCaseValue(formatCurrency(e.target.value))} placeholder="0,00" className="bg-secondary border-border" />
+                  <div className="flex items-center gap-3">
+                    <Input
+                      value={isDanosMorais ? "10.000,00" : caseValue}
+                      onChange={(e) => setCaseValue(formatCurrency(e.target.value))}
+                      placeholder="0,00"
+                      disabled={isDanosMorais}
+                      className="bg-secondary border-border flex-1"
+                    />
+                    <label className="flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
+                      <Checkbox checked={isDanosMorais} onCheckedChange={(checked) => {
+                        setIsDanosMorais(!!checked);
+                        if (checked) setCaseValue("10.000,00");
+                      }} />
+                      <span className="text-xs text-muted-foreground">Danos Morais</span>
+                    </label>
+                  </div>
                 </div>
               </div>
 
