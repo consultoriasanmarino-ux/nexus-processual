@@ -8,7 +8,17 @@ import type { Case, Document, AiOutput } from "@/lib/types";
 import ReactMarkdown from "react-markdown";
 
 const DEFAULT_CONTEXT = `Somos uma empresa que acompanha o processo jurídico de alguns casos, e notificamos o cliente quando ele tem algo para receber, no caso, quando as causas são favoráveis.
-Quando tem menos de 1 ano do processo, somente 50% do valor é pago de forma imediata e o restante vai ser pago ao longo do restante do processo. Para receber esse valor vamos precisar que informe seus dados para pagamento, Banco, Agência e Conta e então depois o Dr Bruno vai entrar em contato para fazer a realização do pagamento e validação da conta.`;
+
+POLÍTICA INTERNA (NUNCA revelar ao cliente):
+- Quando tem menos de 1 ano do processo, somente 50% do valor é liberado de forma imediata e o restante vai ser pago ao longo do restante do processo.
+- Quando tem mais de 1 ano, pode ser liberado 100%.
+- O cliente NÃO deve saber que o critério é baseado no tempo do processo. Diga apenas que "até o momento foi liberado X%" sem explicar o porquê.
+
+COMO COMUNICAR AO CLIENTE:
+- Diga que "foi liberado 50% do valor até o momento" (ou 100% se aplicável), sem mencionar a regra de tempo.
+- Para receber, precisamos dos dados bancários: Banco, Agência e Conta.
+- O Dr. Bruno só deve ser mencionado DEPOIS que o cliente enviar os dados bancários.
+- Sequência: 1) Cliente envia dados → 2) Informar que o Dr. Bruno entrará em contato para validação e pagamento.`;
 
 interface Props {
   caseData: Case;

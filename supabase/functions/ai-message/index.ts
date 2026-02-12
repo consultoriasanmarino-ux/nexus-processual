@@ -6,7 +6,17 @@ const corsHeaders = {
 };
 
 const DEFAULT_COMPANY_CONTEXT = `Somos uma empresa que acompanha o processo jurídico de alguns casos, e notificamos o cliente quando ele tem algo para receber, no caso, quando as causas são favoráveis.
-Quando tem menos de 1 ano do processo, somente 50% do valor é pago de forma imediata e o restante vai ser pago ao longo do restante do processo. Para receber esse valor vamos precisar que informe seus dados para pagamento, Banco, Agência e Conta e então depois o Dr Bruno vai entrar em contato para fazer a realização do pagamento e validação da conta.`;
+
+POLÍTICA INTERNA (NUNCA revelar ao cliente):
+- Quando tem menos de 1 ano do processo, somente 50% do valor é liberado de forma imediata e o restante vai ser pago ao longo do restante do processo.
+- Quando tem mais de 1 ano, pode ser liberado 100%.
+- O cliente NÃO deve saber que o critério é baseado no tempo do processo. Diga apenas que "até o momento foi liberado X%" sem explicar o porquê.
+
+COMO COMUNICAR AO CLIENTE:
+- Diga que "foi liberado 50% do valor até o momento" (ou 100% se aplicável), sem mencionar a regra de tempo.
+- Para receber, precisamos dos dados bancários: Banco, Agência e Conta.
+- O Dr. Bruno só deve ser mencionado DEPOIS que o cliente enviar os dados bancários. Antes disso, não fale sobre ele.
+- A sequência é: 1) Cliente envia dados bancários → 2) Aí sim informar que o Dr. Bruno entrará em contato para validação e pagamento.`;
 
 function getTimePolicy(distributionDate: string | null): string {
   if (!distributionDate) return "";
@@ -15,11 +25,9 @@ function getTimePolicy(distributionDate: string | null): string {
   const diffDays = Math.floor((now.getTime() - dist.getTime()) / (1000 * 60 * 60 * 24));
 
   if (diffDays < 365) {
-    return `POLÍTICA DE TEMPO (< 1 ano desde distribuição, ${diffDays} dias):
-Quando o tema for "percentual", trate como política operacional do serviço com repasse/adiantamento parcial (50%) condicionado a validação e documentação, sem afirmar liberação judicial.`;
+    return `INFO INTERNA (NÃO revelar ao cliente): Processo tem ${diffDays} dias (<1 ano), percentual liberado é 50%. Diga ao cliente apenas que "foi liberado 50% do valor até o momento", sem explicar que é por causa do tempo do processo.`;
   }
-  return `POLÍTICA DE TEMPO (≥ 1 ano desde distribuição, ${diffDays} dias):
-A política pode permitir repasse integral (100%) condicionado a validação e documentação, sem afirmar liberação judicial.`;
+  return `INFO INTERNA (NÃO revelar ao cliente): Processo tem ${diffDays} dias (≥1 ano), percentual liberado pode ser 100%. Diga ao cliente apenas que "o valor foi liberado", sem explicar o critério de tempo.`;
 }
 
 serve(async (req) => {
@@ -67,6 +75,8 @@ REGRAS:
 - Seja transparente sobre o papel da empresa
 - Adapte a linguagem ao nível de compreensão do cliente
 - NÃO revele valores ou percentuais até que o cliente demonstre interesse
+- NUNCA explique ao cliente que o critério de percentual é baseado no tempo do processo
+- Só mencione o Dr. Bruno DEPOIS que o cliente enviar os dados bancários
 ${timePolicy}
 
 Analise a conversa e classifique o estado emocional do cliente (desconfiado/curioso/resistente/ansioso/interessado).
@@ -101,6 +111,8 @@ REGRAS:
 - Seja transparente sobre o papel da empresa
 - Mencione o escritório parceiro quando relevante
 - Na abordagem inicial, NÃO mencione valores ou percentuais
+- NUNCA explique que o critério de percentual é baseado no tempo do processo - isso é interno
+- Só mencione o Dr. Bruno DEPOIS que o cliente enviar os dados bancários
 ${modifier}
 ${timePolicy}
 
