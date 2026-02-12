@@ -25,10 +25,13 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
 
   const conversationId = conversations[0]?.id;
 
+  const toTitleCase = (str: string) =>
+    str.toLowerCase().replace(/(?:^|\s|[-/])\S/g, (c) => c.toUpperCase());
+
   const clientName = (caseData as any).clients?.full_name || "Cliente";
-  const firstName = clientName.split(" ")[0];
-  const defendantName = caseData.defendant || "a parte ré";
-  const courtName = caseData.court || "comarca não informada";
+  const firstName = toTitleCase(clientName.split(" ")[0]);
+  const defendantName = caseData.defendant ? toTitleCase(caseData.defendant) : "a parte ré";
+  const courtName = caseData.court ? caseData.court.toLowerCase().replace(/\b(rs|sp|rj|mg|pr|sc|ba|go|df|es|pe|ce|ma|pa|mt|ms|am|pi|rn|pb|se|al|to|ro|ac|ap|rr)\b/gi, (s) => s.toUpperCase()) : "comarca não informada";
   const initialMessage = `Olá, ${firstName}! Tenho novidades sobre sua ação de revisão contra o ${defendantName} (comarca de ${courtName}). Poderia confirmar se recebeu esta mensagem?`;
 
   const addMessage = async (sender: string, text: string) => {
