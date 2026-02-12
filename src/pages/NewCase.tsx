@@ -176,6 +176,7 @@ export default function NewCase() {
           partner_law_firm_name: partnerFirm || null,
           partner_lawyer_name: partnerLawyer || null,
           case_value: parsedValue,
+          case_summary: extracted?.summary || null,
         } as any)
         .select()
         .single();
