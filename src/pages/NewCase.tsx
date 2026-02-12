@@ -13,6 +13,13 @@ import * as pdfjsLib from "pdfjs-dist";
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs`;
 
+function formatCurrency(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  const num = parseInt(digits, 10) / 100;
+  return num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, "");
   if (digits.length <= 2) return digits.length ? `(${digits}` : "";
@@ -115,7 +122,17 @@ export default function NewCase() {
       setProcessNumber(ext.process_number || "");
       setDistributionDate(ext.distribution_date || "");
       setPartnerFirm(ext.partner_law_firm || "");
-      setCaseValue(ext.case_value || "");
+      // Format case_value from AI (comes as "50000.00" string)
+      if (ext.case_value) {
+        const numVal = parseFloat(String(ext.case_value).replace(/[^\d.]/g, ""));
+        if (!isNaN(numVal)) {
+          setCaseValue(numVal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+        } else {
+          setCaseValue("");
+        }
+      } else {
+        setCaseValue("");
+      }
       // Pick the first lawyer as partner
       if (ext.lawyers?.length > 0) {
         setPartnerLawyer(ext.lawyers.map((l) => `${l.name} (${l.oab})`).join(", "));
@@ -161,7 +178,7 @@ export default function NewCase() {
       if (clientErr) throw clientErr;
 
       // 2. Create case
-      const parsedValue = caseValue ? parseFloat(caseValue.replace(/[^\d.,]/g, "").replace(",", ".")) : null;
+      const parsedValue = caseValue ? parseFloat(caseValue.replace(/\./g, "").replace(",", ".")) : null;
       const { data: caseResult, error: caseErr } = await supabase
         .from("cases")
         .insert({
@@ -362,21 +379,7 @@ export default function NewCase() {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Valor da causa (R$)</Label>
-                  <Input value={caseValue} onChange={(e) => setCaseValue(e.target.value)} placeholder="0,00" className="bg-secondary border-border" />
-                </div>
-              </div>
-
-              <hr className="border-border" />
-
-              <h3 className="text-sm font-semibold">Escritório Parceiro</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Escritório</Label>
-                  <Input value={partnerFirm} onChange={(e) => setPartnerFirm(e.target.value)} className="bg-secondary border-border" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Advogado(s)</Label>
-                  <Input value={partnerLawyer} onChange={(e) => setPartnerLawyer(e.target.value)} className="bg-secondary border-border" />
+                  <Input value={caseValue} onChange={(e) => setCaseValue(formatCurrency(e.target.value))} placeholder="0,00" className="bg-secondary border-border" />
                 </div>
               </div>
 
