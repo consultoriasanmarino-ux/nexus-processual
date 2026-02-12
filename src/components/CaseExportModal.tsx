@@ -3,107 +3,49 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Download, Copy, Check, FileDown } from "lucide-react";
 import { toast } from "sonner";
-import type { Case, Document, Conversation, Message, AiOutput } from "@/lib/types";
+import type { Case } from "@/lib/types";
 
 interface Props {
   caseData: Case;
-  documents: Document[];
-  conversations: Conversation[];
-  messages: Message[];
-  aiOutputs: AiOutput[];
 }
 
 function toTitleCase(str: string) {
   return str.toLowerCase().replace(/(?:^|\s|[-/])\S/g, (c) => c.toUpperCase());
 }
 
-function buildExportText(caseData: Case, documents: Document[], conversations: Conversation[], messages: Message[], aiOutputs: AiOutput[]): string {
+function buildExportText(caseData: Case): string {
   const client = (caseData as any).clients;
-  const caseValue = (caseData as any).case_value;
+  const caseValue = (caseData as any).case_value ? Number((caseData as any).case_value) : null;
+  const paymentValue = caseValue ? caseValue / 2 : null;
   const lines: string[] = [];
 
-  lines.push("═══════════════════════════════════════");
-  lines.push("         EXPORTAÇÃO DE CASO");
-  lines.push("═══════════════════════════════════════");
+  if (caseData.distribution_date) {
+    lines.push(`Data de Autuação: ${new Date(caseData.distribution_date + "T12:00:00").toLocaleDateString("pt-BR")}`);
+  }
   lines.push("");
 
-  // Case info
-  lines.push("📋 DADOS DO CASO");
-  lines.push("───────────────────────────────────────");
-  lines.push(`Título: ${caseData.case_title}`);
-  if (caseData.process_number) lines.push(`Nº Processo: ${caseData.process_number}`);
-  lines.push(`Status: ${caseData.status}`);
-  if (caseData.case_type) lines.push(`Tipo: ${caseData.case_type}`);
-  if (caseData.defendant) lines.push(`Réu: ${toTitleCase(caseData.defendant)}`);
-  if (caseData.court) lines.push(`Tribunal/Comarca: ${caseData.court}`);
-  if (caseData.distribution_date) lines.push(`Data de Distribuição: ${new Date(caseData.distribution_date).toLocaleDateString("pt-BR")}`);
-  if (caseValue) lines.push(`Valor da Causa: R$ ${Number(caseValue).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
+  if (caseValue !== null) {
+    lines.push(`Valor da Causa: R$ ${caseValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
+  }
+  if (paymentValue !== null) {
+    lines.push(`Valor de pagamento: R$ ${paymentValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
+  }
   lines.push("");
 
-  // Client info
   if (client) {
     lines.push("👤 DADOS DO CLIENTE");
     lines.push("───────────────────────────────────────");
     lines.push(`Nome: ${toTitleCase(client.full_name)}`);
     lines.push(`Telefone: ${client.phone}`);
-    if (client.email) lines.push(`Email: ${client.email}`);
     if (client.cpf_or_identifier) lines.push(`CPF: ${client.cpf_or_identifier}`);
-    if (client.notes) lines.push(`Observações: ${client.notes}`);
-    lines.push("");
   }
-
-  // Partner firm
-  if (caseData.partner_law_firm_name || caseData.partner_lawyer_name) {
-    lines.push("🏢 ESCRITÓRIO PARCEIRO");
-    lines.push("───────────────────────────────────────");
-    if (caseData.partner_law_firm_name) lines.push(`Escritório: ${caseData.partner_law_firm_name}`);
-    if (caseData.partner_lawyer_name) lines.push(`Advogado: ${caseData.partner_lawyer_name}`);
-    lines.push("");
-  }
-
-  // Documents
-  if (documents.length > 0) {
-    lines.push("📄 DOCUMENTOS");
-    lines.push("───────────────────────────────────────");
-    documents.forEach((d, i) => {
-      lines.push(`${i + 1}. ${d.doc_type || "Documento"} — ${new Date(d.created_at).toLocaleDateString("pt-BR")}`);
-      if (d.extracted_text) {
-        lines.push(`   Texto extraído: ${d.extracted_text.substring(0, 200)}${d.extracted_text.length > 200 ? "..." : ""}`);
-      }
-    });
-    lines.push("");
-  }
-
-  // AI Outputs
-  const summary = aiOutputs.find((o) => o.output_type === "case_summary");
-  if (summary) {
-    lines.push("🤖 RESUMO DA IA");
-    lines.push("───────────────────────────────────────");
-    lines.push(summary.content);
-    lines.push("");
-  }
-
-  // Messages
-  if (messages.length > 0) {
-    lines.push("💬 HISTÓRICO DE MENSAGENS");
-    lines.push("───────────────────────────────────────");
-    messages.forEach((m) => {
-      const sender = m.sender === "client" ? "Cliente" : "Operador";
-      const date = new Date(m.created_at).toLocaleString("pt-BR");
-      lines.push(`[${date}] ${sender}: ${m.message_text}`);
-    });
-    lines.push("");
-  }
-
-  lines.push("───────────────────────────────────────");
-  lines.push(`Exportado em: ${new Date().toLocaleString("pt-BR")}`);
 
   return lines.join("\n");
 }
 
-export function CaseExportModal({ caseData, documents, conversations, messages, aiOutputs }: Props) {
+export function CaseExportModal({ caseData }: Props) {
   const [copied, setCopied] = useState(false);
-  const exportText = buildExportText(caseData, documents, conversations, messages, aiOutputs);
+  const exportText = buildExportText(caseData);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(exportText);

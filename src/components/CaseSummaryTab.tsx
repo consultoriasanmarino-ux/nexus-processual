@@ -3,10 +3,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Sparkles, Loader2, AlertTriangle, Building2, User, Gavel, Save, BookOpen, DollarSign } from "lucide-react";
+import { Sparkles, Loader2, AlertTriangle, Building2, User, Gavel, Save, BookOpen, DollarSign, CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { Case, Document, AiOutput } from "@/lib/types";
 import ReactMarkdown from "react-markdown";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { cn } from "@/lib/utils";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 
 const DEFAULT_CONTEXT = `Somos uma empresa que acompanha o processo jurídico de alguns casos e notificamos o cliente quando ele tem algo para receber, no caso, quando as causas são favoráveis.
 
@@ -50,6 +55,10 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
       : ""
   );
   const [savingValue, setSavingValue] = useState(false);
+  const [distributionDate, setDistributionDate] = useState<Date | undefined>(
+    caseData.distribution_date ? new Date(caseData.distribution_date + "T12:00:00") : undefined
+  );
+  const [savingDate, setSavingDate] = useState(false);
 
   const summaryOutput = aiOutputs.find((o) => o.output_type === "case_summary");
   const docWithJson = documents.find((d) => d.extracted_json);
@@ -156,7 +165,43 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
             {caseData.defendant && <p className="text-sm"><span className="text-muted-foreground">Réu:</span> {caseData.defendant}</p>}
             {caseData.case_type && <p className="text-sm"><span className="text-muted-foreground">Tipo:</span> {caseData.case_type}</p>}
             {caseData.court && <p className="text-sm"><span className="text-muted-foreground">Tribunal:</span> {caseData.court}</p>}
-            {caseData.distribution_date && <p className="text-sm"><span className="text-muted-foreground">Distribuição:</span> {new Date(caseData.distribution_date).toLocaleDateString("pt-BR")}</p>}
+            <div className="flex items-center gap-2">
+              <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Distribuição:</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "h-7 w-40 justify-start text-left text-sm font-normal",
+                      !distributionDate && "text-muted-foreground"
+                    )}
+                  >
+                    {distributionDate ? format(distributionDate, "dd/MM/yyyy") : "Selecionar"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={distributionDate}
+                    onSelect={async (date) => {
+                      setDistributionDate(date);
+                      if (date) {
+                        setSavingDate(true);
+                        const dateStr = format(date, "yyyy-MM-dd");
+                        const { error } = await supabase.from("cases").update({ distribution_date: dateStr } as any).eq("id", caseData.id);
+                        if (error) toast.error("Erro ao salvar data.");
+                        else { toast.success("Data atualizada!"); onRefresh(); }
+                        setSavingDate(false);
+                      }
+                    }}
+                    locale={ptBR}
+                    className={cn("p-3 pointer-events-auto")}
+                  />
+                </PopoverContent>
+              </Popover>
+              {savingDate && <Loader2 className="w-3 h-3 animate-spin" />}
+            </div>
             <div className="flex items-center gap-2 mt-2">
               <DollarSign className="w-3.5 h-3.5 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">Valor da causa: R$</span>

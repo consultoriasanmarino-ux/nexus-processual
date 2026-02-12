@@ -97,13 +97,7 @@ export default function CaseDetail() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              <CaseExportModal
-                caseData={caseData}
-                documents={documents}
-                conversations={conversations}
-                messages={messages}
-                aiOutputs={aiOutputs}
-              />
+              <CaseExportModal caseData={caseData} />
               <span className={`${status.color} text-xs font-semibold px-3 py-1 rounded-full text-foreground`}>
                 {status.label}
               </span>
