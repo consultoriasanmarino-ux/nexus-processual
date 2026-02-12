@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Sparkles, Loader2, AlertTriangle, Building2, User, Gavel, Save, BookOpen } from "lucide-react";
+import { Sparkles, Loader2, AlertTriangle, Building2, User, Gavel, Save, BookOpen, DollarSign } from "lucide-react";
 import { toast } from "sonner";
 import type { Case, Document, AiOutput } from "@/lib/types";
 import ReactMarkdown from "react-markdown";
@@ -30,6 +31,8 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
   const [analyzing, setAnalyzing] = useState(false);
   const [context, setContext] = useState(caseData.company_context || DEFAULT_CONTEXT);
   const [savingCtx, setSavingCtx] = useState(false);
+  const [caseValueInput, setCaseValueInput] = useState((caseData as any).case_value ? String((caseData as any).case_value) : "");
+  const [savingValue, setSavingValue] = useState(false);
 
   const summaryOutput = aiOutputs.find((o) => o.output_type === "case_summary");
   const docWithJson = documents.find((d) => d.extracted_json);
@@ -43,6 +46,18 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
       onRefresh();
     }
     setSavingCtx(false);
+  };
+
+  const handleSaveCaseValue = async () => {
+    setSavingValue(true);
+    const parsed = caseValueInput ? parseFloat(caseValueInput.replace(/[^\d.,]/g, "").replace(",", ".")) : null;
+    const { error } = await supabase.from("cases").update({ case_value: parsed } as any).eq("id", caseData.id);
+    if (error) toast.error("Erro ao salvar valor.");
+    else {
+      toast.success("Valor da causa salvo!");
+      onRefresh();
+    }
+    setSavingValue(false);
   };
 
   const handleAnalyze = async () => {
@@ -125,7 +140,25 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
             {caseData.case_type && <p className="text-sm"><span className="text-muted-foreground">Tipo:</span> {caseData.case_type}</p>}
             {caseData.court && <p className="text-sm"><span className="text-muted-foreground">Tribunal:</span> {caseData.court}</p>}
             {caseData.distribution_date && <p className="text-sm"><span className="text-muted-foreground">Distribuição:</span> {new Date(caseData.distribution_date).toLocaleDateString("pt-BR")}</p>}
-            {(caseData as any).case_value && <p className="text-sm"><span className="text-muted-foreground">Valor da causa:</span> R$ {Number((caseData as any).case_value).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>}
+            <div className="flex items-center gap-2 mt-2">
+              <DollarSign className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Valor da causa: R$</span>
+              <Input
+                value={caseValueInput}
+                onChange={(e) => setCaseValueInput(e.target.value)}
+                placeholder="0,00"
+                className="bg-secondary border-border h-7 w-32 text-sm"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSaveCaseValue}
+                disabled={savingValue}
+                className="h-7 text-xs px-2"
+              >
+                {savingValue ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+              </Button>
+            </div>
           </div>
         </div>
         {(caseData.partner_law_firm_name || caseData.partner_lawyer_name) && (
