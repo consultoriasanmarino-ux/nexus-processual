@@ -63,6 +63,7 @@ export type Database = {
           case_title: string
           case_type: string | null
           client_id: string
+          company_context: string | null
           court: string | null
           created_at: string
           defendant: string | null
@@ -78,6 +79,7 @@ export type Database = {
           case_title: string
           case_type?: string | null
           client_id: string
+          company_context?: string | null
           court?: string | null
           created_at?: string
           defendant?: string | null
@@ -93,6 +95,7 @@ export type Database = {
           case_title?: string
           case_type?: string | null
           client_id?: string
+          company_context?: string | null
           court?: string | null
           created_at?: string
           defendant?: string | null

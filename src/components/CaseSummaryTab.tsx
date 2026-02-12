@@ -1,10 +1,14 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Loader2, AlertTriangle, Building2, User, Calendar, Gavel } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Sparkles, Loader2, AlertTriangle, Building2, User, Gavel, Save, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import type { Case, Document, AiOutput } from "@/lib/types";
 import ReactMarkdown from "react-markdown";
+
+const DEFAULT_CONTEXT = `Somos uma empresa que acompanha o processo jurídico de alguns casos, e notificamos o cliente quando ele tem algo para receber, no caso, quando as causas são favoráveis.
+Quando tem menos de 1 ano do processo, somente 50% do valor é pago de forma imediata e o restante vai ser pago ao longo do restante do processo. Para receber esse valor vamos precisar que informe seus dados para pagamento, Banco, Agência e Conta e então depois o Dr Bruno vai entrar em contato para fazer a realização do pagamento e validação da conta.`;
 
 interface Props {
   caseData: Case;
@@ -15,9 +19,22 @@ interface Props {
 
 export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Props) {
   const [analyzing, setAnalyzing] = useState(false);
+  const [context, setContext] = useState(caseData.company_context || DEFAULT_CONTEXT);
+  const [savingCtx, setSavingCtx] = useState(false);
 
   const summaryOutput = aiOutputs.find((o) => o.output_type === "case_summary");
   const docWithJson = documents.find((d) => d.extracted_json);
+
+  const handleSaveContext = async () => {
+    setSavingCtx(true);
+    const { error } = await supabase.from("cases").update({ company_context: context } as any).eq("id", caseData.id);
+    if (error) toast.error("Erro ao salvar contexto.");
+    else {
+      toast.success("Contexto salvo!");
+      onRefresh();
+    }
+    setSavingCtx(false);
+  };
 
   const handleAnalyze = async () => {
     const docWithText = documents.find((d) => d.extracted_text);
@@ -49,6 +66,33 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
 
   return (
     <div className="space-y-4 animate-fade-in">
+      {/* Company Context */}
+      <div className="bg-card border border-border rounded-xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-primary" /> Contexto da Empresa
+          </h3>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleSaveContext}
+            disabled={savingCtx || context === (caseData.company_context || DEFAULT_CONTEXT)}
+            className="text-xs"
+          >
+            {savingCtx ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+            Salvar
+          </Button>
+        </div>
+        <p className="text-[10px] text-muted-foreground mb-2">
+          Este contexto é usado pela IA para responder mensagens e gerar abordagens. Edite conforme necessário.
+        </p>
+        <Textarea
+          value={context}
+          onChange={(e) => setContext(e.target.value)}
+          className="bg-secondary border-border min-h-[120px] resize-y text-sm"
+        />
+      </div>
+
       {/* Case info cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-card border border-border rounded-xl p-4">

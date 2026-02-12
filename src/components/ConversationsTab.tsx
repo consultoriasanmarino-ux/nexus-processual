@@ -18,8 +18,10 @@ interface Props {
 export function ConversationsTab({ caseId, caseData, conversations, messages, onRefresh }: Props) {
   const { user } = useAuth();
   const [clientMsg, setClientMsg] = useState("");
+  const [operatorMsg, setOperatorMsg] = useState("");
   const [suggesting, setSuggesting] = useState(false);
   const [suggestion, setSuggestion] = useState<{ short: string; standard: string; state: string } | null>(null);
+  const [senderTab, setSenderTab] = useState<"client" | "operator">("client");
 
   const conversationId = conversations[0]?.id;
 
@@ -40,6 +42,13 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
     setClientMsg("");
   };
 
+  const handlePasteOperatorMsg = async () => {
+    if (!operatorMsg.trim()) return;
+    await addMessage("operator", operatorMsg.trim());
+    setOperatorMsg("");
+    toast.success("Mensagem do operador registrada.");
+  };
+
   const handleSuggestReply = async () => {
     setSuggesting(true);
     setSuggestion(null);
@@ -50,6 +59,11 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
           caseId,
           caseTitle: caseData.case_title,
           distributionDate: caseData.distribution_date,
+          defendant: caseData.defendant,
+          court: caseData.court,
+          partnerFirm: caseData.partner_law_firm_name,
+          partnerLawyer: caseData.partner_lawyer_name,
+          companyContext: caseData.company_context,
           recentMessages: messages.slice(-10).map((m) => ({ sender: m.sender, text: m.message_text })),
         },
       });
@@ -64,7 +78,7 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
   const handleUseSuggestion = async (text: string) => {
     await addMessage("operator", text);
     setSuggestion(null);
-    toast.success("Mensagem enviada.");
+    toast.success("Mensagem registrada.");
   };
 
   return (
@@ -96,23 +110,58 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
         )}
       </div>
 
-      {/* Input area */}
+      {/* Input area with sender tabs */}
       <div className="bg-card border border-border rounded-xl p-4 space-y-3">
-        <Textarea
-          placeholder="Cole aqui a mensagem do cliente..."
-          value={clientMsg}
-          onChange={(e) => setClientMsg(e.target.value)}
-          className="bg-secondary border-border min-h-[80px] resize-none"
-        />
-        <div className="flex items-center gap-2">
-          <Button onClick={handlePasteClientMsg} disabled={!clientMsg.trim()} variant="outline" size="sm">
-            <Send className="w-3 h-3 mr-1" /> Registrar mensagem do cliente
-          </Button>
-          <Button onClick={handleSuggestReply} disabled={suggesting} size="sm" className="bg-gradient-gold text-primary-foreground hover:opacity-90 text-xs">
-            {suggesting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Sparkles className="w-3 h-3 mr-1" />}
-            Sugerir resposta
-          </Button>
+        <div className="flex gap-1 bg-secondary rounded-lg p-1">
+          <button
+            onClick={() => setSenderTab("client")}
+            className={`flex-1 text-xs font-medium py-1.5 px-3 rounded-md transition-colors ${
+              senderTab === "client" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <User className="w-3 h-3 inline mr-1" /> Mensagem do Cliente
+          </button>
+          <button
+            onClick={() => setSenderTab("operator")}
+            className={`flex-1 text-xs font-medium py-1.5 px-3 rounded-md transition-colors ${
+              senderTab === "operator" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Bot className="w-3 h-3 inline mr-1" /> Mensagem que Enviei
+          </button>
         </div>
+
+        {senderTab === "client" ? (
+          <>
+            <Textarea
+              placeholder="Cole aqui a mensagem recebida do cliente..."
+              value={clientMsg}
+              onChange={(e) => setClientMsg(e.target.value)}
+              className="bg-secondary border-border min-h-[80px] resize-none"
+            />
+            <div className="flex items-center gap-2">
+              <Button onClick={handlePasteClientMsg} disabled={!clientMsg.trim()} variant="outline" size="sm">
+                <Send className="w-3 h-3 mr-1" /> Registrar mensagem do cliente
+              </Button>
+              <Button onClick={handleSuggestReply} disabled={suggesting} size="sm" className="bg-gradient-gold text-primary-foreground hover:opacity-90 text-xs">
+                {suggesting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Sparkles className="w-3 h-3 mr-1" />}
+                Sugerir resposta
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <Textarea
+              placeholder="Cole aqui a mensagem que você enviou ao cliente..."
+              value={operatorMsg}
+              onChange={(e) => setOperatorMsg(e.target.value)}
+              className="bg-secondary border-border min-h-[80px] resize-none"
+            />
+            <Button onClick={handlePasteOperatorMsg} disabled={!operatorMsg.trim()} variant="outline" size="sm">
+              <Send className="w-3 h-3 mr-1" /> Registrar mensagem enviada
+            </Button>
+          </>
+        )}
       </div>
 
       {/* Suggestion */}

@@ -5,6 +5,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const DEFAULT_COMPANY_CONTEXT = `Somos uma empresa que acompanha o processo jurídico de alguns casos, e notificamos o cliente quando ele tem algo para receber, no caso, quando as causas são favoráveis.
+Quando tem menos de 1 ano do processo, somente 50% do valor é pago de forma imediata e o restante vai ser pago ao longo do restante do processo. Para receber esse valor vamos precisar que informe seus dados para pagamento, Banco, Agência e Conta e então depois o Dr Bruno vai entrar em contato para fazer a realização do pagamento e validação da conta.`;
+
 function getTimePolicy(distributionDate: string | null): string {
   if (!distributionDate) return "";
   const dist = new Date(distributionDate);
@@ -27,9 +30,10 @@ serve(async (req) => {
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
     const body = await req.json();
-    const { action, caseId, caseTitle, distributionDate, defendant, caseType, court, partnerFirm, partnerLawyer, context, objective, tone, formality, existingOutputs, recentMessages } = body;
+    const { action, caseId, caseTitle, distributionDate, defendant, caseType, court, partnerFirm, partnerLawyer, companyContext, context, objective, tone, formality, existingOutputs, recentMessages } = body;
 
     const timePolicy = getTimePolicy(distributionDate);
+    const compCtx = companyContext || DEFAULT_COMPANY_CONTEXT;
 
     const caseContext = `Caso: ${caseTitle || "N/A"}
 Réu: ${defendant || "N/A"}
@@ -46,7 +50,14 @@ ${timePolicy}`;
       const msgsText = (recentMessages || []).map((m: any) => `${m.sender}: ${m.text}`).join("\n");
       systemPrompt = `Você é um assistente de comunicação processual para uma empresa que acompanha processos judiciais e se comunica com clientes via WhatsApp, em parceria com escritórios de advocacia.
 
-Contexto da empresa: Somos uma empresa parceira do escritório responsável, atuamos no acompanhamento processual e na comunicação operacional com clientes, sem substituir o advogado.
+CONTEXTO DA EMPRESA (USE COMO BASE PARA TODAS AS RESPOSTAS):
+${compCtx}
+
+IMPORTANTE SOBRE ABORDAGEM:
+- Na PRIMEIRA mensagem ou quando o cliente ainda não sabe dos detalhes, seja sutil. Não mencione valores, percentuais ou pagamentos diretamente.
+- Comece com uma abordagem amigável, confirmando se a pessoa recebeu a mensagem e se é a pessoa correta.
+- Só aprofunde sobre valores e dados bancários DEPOIS que o cliente demonstrar interesse e responder positivamente.
+- A progressão deve ser: 1) Contato inicial sutil → 2) Confirmação de identidade → 3) Explicar que há novidades sobre o processo → 4) Quando o cliente perguntar, explicar sobre o valor → 5) Solicitar dados bancários → 6) Informar que o Dr. Bruno entrará em contato.
 
 ${caseContext}
 
@@ -55,15 +66,16 @@ REGRAS:
 - Nunca prometa resultados judiciais
 - Seja transparente sobre o papel da empresa
 - Adapte a linguagem ao nível de compreensão do cliente
+- NÃO revele valores ou percentuais até que o cliente demonstre interesse
 ${timePolicy}
 
 Analise a conversa e classifique o estado emocional do cliente (desconfiado/curioso/resistente/ansioso/interessado).
-Sugira 2 respostas: uma curta e uma padrão.
+Sugira 2 respostas: uma curta e uma padrão, adequadas ao MOMENTO da conversa (se é início, meio ou fim do funil).
 
 Responda em JSON:
 {"state": "...", "short": "resposta curta", "standard": "resposta padrão completa"}`;
 
-      userPrompt = `Conversa recente:\n${msgsText}\n\nSugira respostas adequadas.`;
+      userPrompt = `Conversa recente:\n${msgsText}\n\nSugira respostas adequadas ao momento atual da conversa.`;
     } else {
       const count = action === "variations_v1" ? 3 : 1;
       const modifier = action === "make_trustworthy" ? "\nFoque em tornar a mensagem mais confiável, incluindo referências ao escritório parceiro e ao processo."
@@ -73,7 +85,10 @@ Responda em JSON:
 
       systemPrompt = `Você é um assistente de comunicação processual.
 
-Contexto: ${context || "N/A"}
+CONTEXTO DA EMPRESA:
+${compCtx}
+
+Contexto adicional: ${context || "N/A"}
 Objetivo: ${objective || "N/A"}
 Tom: ${tone || "profissional"}
 Formalidade: ${formality || "média"}
@@ -85,6 +100,7 @@ REGRAS:
 - Nunca prometa resultados judiciais
 - Seja transparente sobre o papel da empresa
 - Mencione o escritório parceiro quando relevante
+- Na abordagem inicial, NÃO mencione valores ou percentuais
 ${modifier}
 ${timePolicy}
 
@@ -97,7 +113,7 @@ Responda em JSON:
 {"messages": [{"message": "...", "short_variant": "versão curta", "confidence": N, "scam_risk": "...", "scam_reasons": ["..."]}]}`;
 
       userPrompt = action === "approach_v1"
-        ? "Gere uma mensagem de abordagem inicial para o primeiro contato com o cliente sobre este processo."
+        ? "Gere uma mensagem de abordagem inicial para o primeiro contato com o cliente sobre este processo. Seja sutil, não mencione valores."
         : action === "variations_v1"
         ? "Gere 3 variações diferentes de mensagem para este caso."
         : `Reescreva/melhore esta mensagem existente:\n${existingOutputs?.[0] || "Gere uma mensagem nova."}`;
