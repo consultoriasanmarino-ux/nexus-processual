@@ -25,6 +25,12 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
 
   const conversationId = conversations[0]?.id;
 
+  const clientName = (caseData as any).clients?.full_name || "Cliente";
+  const firstName = clientName.split(" ")[0];
+  const defendantName = caseData.defendant || "a parte ré";
+  const courtName = caseData.court || "comarca não informada";
+  const initialMessage = `Olá, ${firstName}! Tenho novidades sobre sua ação de revisão contra o ${defendantName} (comarca de ${courtName}). Poderia confirmar se recebeu esta mensagem?`;
+
   const addMessage = async (sender: string, text: string) => {
     if (!user || !conversationId) return;
     await supabase.from("messages").insert({
@@ -84,6 +90,17 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
 
   return (
     <div className="space-y-4 animate-fade-in">
+      {/* Initial message template */}
+      <div className="bg-card border border-primary/20 rounded-xl p-4 space-y-2">
+        <div className="flex items-center gap-2 text-xs text-primary font-medium">
+          <MessageSquare className="w-3.5 h-3.5" />
+          Mensagem inicial (copiar e enviar ao cliente)
+        </div>
+        <p className="text-sm bg-secondary rounded-lg p-3 whitespace-pre-wrap select-all cursor-pointer" title="Clique para selecionar" onClick={() => { navigator.clipboard.writeText(initialMessage); toast.success("Mensagem copiada!"); }}>
+          {initialMessage}
+        </p>
+      </div>
+
       {/* Messages */}
       <div className="bg-card border border-border rounded-xl p-4 max-h-96 overflow-y-auto space-y-3">
         {messages.length === 0 ? (
