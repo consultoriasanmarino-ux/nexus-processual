@@ -27,10 +27,16 @@ TAREFA: Extraia dados estruturados da petição.
 
 ATENÇÃO CRÍTICA — NÃO confunda os dados:
 - O AUTOR/REQUERENTE é o CLIENTE (a pessoa que entrou com a ação). Extraia nome e CPF do autor.
-- O RÉU/REQUERIDO é a parte CONTRÁRIA.
+- O RÉU/REQUERIDO é a parte CONTRÁRIA (defendant).
 - Os ADVOGADOS listados representam uma das partes. Identifique para qual parte cada advogado atua (autor ou réu).
-- O advogado do AUTOR é o advogado parceiro do escritório. 
+- O advogado do AUTOR é o advogado parceiro do escritório.
 - Se houver telefone ou e-mail do autor/cliente no texto, extraia.
+
+DICAS DE LOCALIZAÇÃO NO PDF:
+- O CABEÇALHO geralmente contém o nome do ESCRITÓRIO DE ADVOCACIA e logo. Extraia o nome do escritório.
+- Os dados do ADVOGADO (nome, OAB) geralmente aparecem no cabeçalho, na assinatura final, ou após "por meio do seu advogado".
+- A DATA DO PROCESSO (distribuição/protocolo) geralmente fica no RODAPÉ da última página ou próximo à assinatura.
+- Procure padrões como "Data:", "Protocolo:", "Distribuído em:", ou datas no formato DD/MM/YYYY no final do documento.
 
 Responda APENAS com JSON válido (sem markdown, sem backticks):
 {
@@ -42,10 +48,10 @@ Responda APENAS com JSON válido (sem markdown, sem backticks):
   "process_number": "número do processo se encontrado",
   "distribution_date": "data de distribuição no formato YYYY-MM-DD se encontrada, senão vazio",
   "lawyers": [
-    {"name": "nome do advogado", "oab": "número OAB", "role": "advogado do autor | advogado do réu"}
+    {"name": "nome do advogado", "oab": "número OAB com estado (ex: OAB/RS 12345)", "role": "advogado do autor | advogado do réu"}
   ],
-  "partner_law_firm": "nome do escritório do advogado do autor se mencionado",
-  "phone_found": "telefone encontrado no texto do autor/cliente, se houver",
+  "partner_law_firm": "nome do escritório de advocacia do autor (geralmente no cabeçalho)",
+  "phone_found": "telefone encontrado no texto do autor/cliente, se houver (apenas dígitos)",
   "summary": "resumo em 2-3 frases em linguagem simples para leigos",
   "valores_citados": ["valores monetários mencionados"],
   "alertas_golpe": ["elementos que podem parecer suspeitos ao cliente ser contactado"],

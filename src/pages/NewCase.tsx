@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,6 +12,13 @@ import * as pdfjsLib from "pdfjs-dist";
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs`;
+
+function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length <= 2) return digits.length ? `(${digits}` : "";
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
+}
 
 interface ExtractedData {
   client_name: string;
@@ -112,7 +119,7 @@ export default function NewCase() {
       }
       // If phone was found in PDF and none was provided
       if (ext.phone_found && !phone) {
-        setPhone(ext.phone_found);
+        setPhone(formatPhone(ext.phone_found));
       }
 
       toast.success("PDF processado! Confira os dados extraídos.");
@@ -133,6 +140,8 @@ export default function NewCase() {
       return;
     }
 
+    const phoneDigits = phone.replace(/\D/g, "");
+
     setSaving(true);
     try {
       // 1. Create client
@@ -141,7 +150,7 @@ export default function NewCase() {
         .insert({
           full_name: clientName,
           cpf_or_identifier: clientCpf || null,
-          phone,
+          phone: phoneDigits,
           user_id: user.id,
         })
         .select()
@@ -170,7 +179,8 @@ export default function NewCase() {
       // 3. Upload PDF and save document
       if (pdfFile) {
         const filePath = `${user.id}/${caseResult.id}/${pdfFile.name}`;
-        await supabase.storage.from("documents").upload(filePath, pdfFile);
+        const { error: uploadErr } = await supabase.storage.from("documents").upload(filePath, pdfFile);
+        if (uploadErr) console.warn("Upload warning:", uploadErr.message);
 
         const pdfText = extracted ? await extractTextFromPdf(pdfFile).catch(() => "") : "";
 
@@ -194,7 +204,8 @@ export default function NewCase() {
       toast.success("Caso criado com sucesso!");
       navigate(`/case/${caseResult.id}`);
     } catch (err: any) {
-      toast.error(err.message || "Erro ao salvar.");
+      console.error("Save error:", err);
+      toast.error(err.message || "Erro ao salvar. Tente novamente.");
     }
     setSaving(false);
   };
@@ -220,8 +231,9 @@ export default function NewCase() {
               </Label>
               <Input
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="(11) 99999-9999"
+                onChange={(e) => setPhone(formatPhone(e.target.value))}
+                placeholder="(55) 99999-9999"
+                maxLength={15}
                 className="bg-secondary border-border"
               />
               <p className="text-[10px] text-muted-foreground">Se o telefone estiver na petição, será extraído automaticamente.</p>
@@ -306,7 +318,7 @@ export default function NewCase() {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Telefone *</Label>
-                  <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="bg-secondary border-border" />
+                  <Input value={phone} onChange={(e) => setPhone(formatPhone(e.target.value))} maxLength={15} className="bg-secondary border-border" />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">CPF</Label>
