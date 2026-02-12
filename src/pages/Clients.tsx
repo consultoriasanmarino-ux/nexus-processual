@@ -3,14 +3,22 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Layout } from "@/components/Layout";
 import { Input } from "@/components/ui/input";
-import { Search, User, Phone, Mail } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Search, User, Phone, Mail, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import type { Client } from "@/lib/types";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export default function Clients() {
   const { user } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -19,6 +27,24 @@ export default function Clients() {
       setLoading(false);
     });
   }, [user]);
+
+  const handleDeleteClient = async (clientId: string) => {
+    setDeleting(clientId);
+    // Check if client has cases
+    const { data: clientCases } = await supabase.from("cases").select("id").eq("client_id", clientId);
+    if (clientCases && clientCases.length > 0) {
+      toast.error(`Este cliente possui ${clientCases.length} caso(s). Exclua os casos primeiro.`);
+      setDeleting(null);
+      return;
+    }
+    const { error } = await supabase.from("clients").delete().eq("id", clientId);
+    if (error) toast.error("Erro ao excluir cliente.");
+    else {
+      toast.success("Cliente excluído.");
+      setClients((prev) => prev.filter((c) => c.id !== clientId));
+    }
+    setDeleting(null);
+  };
 
   const filtered = clients.filter((c) => {
     const q = search.toLowerCase();
@@ -48,7 +74,7 @@ export default function Clients() {
         ) : (
           <div className="space-y-3">
             {filtered.map((c) => (
-              <div key={c.id} className="bg-card border border-border rounded-xl p-4 flex items-center gap-4">
+              <div key={c.id} className="group bg-card border border-border rounded-xl p-4 flex items-center gap-4">
                 <div className="w-10 h-10 rounded-full bg-gradient-gold flex items-center justify-center text-sm font-bold text-primary-foreground flex-shrink-0">
                   {c.full_name[0]?.toUpperCase()}
                 </div>
@@ -60,6 +86,35 @@ export default function Clients() {
                     {c.cpf_or_identifier && <span className="text-xs text-muted-foreground font-mono">CPF: {c.cpf_or_identifier}</span>}
                   </div>
                 </div>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all flex-shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Excluir cliente?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        O cliente <strong>{c.full_name}</strong> será excluído permanentemente. Clientes com casos vinculados não podem ser excluídos.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleDeleteClient(c.id)}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        disabled={deleting === c.id}
+                      >
+                        {deleting === c.id ? "Excluindo..." : "Excluir"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             ))}
           </div>

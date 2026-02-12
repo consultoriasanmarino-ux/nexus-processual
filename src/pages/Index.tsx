@@ -5,8 +5,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Briefcase, User, Calendar, Hash } from "lucide-react";
+import { Plus, Search, Briefcase, User, Calendar, Hash, Trash2 } from "lucide-react";
 import { getStatusInfo, type Case } from "@/lib/types";
+import { toast } from "sonner";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export default function Index() {
   const { user } = useAuth();
@@ -14,6 +20,7 @@ export default function Index() {
   const [cases, setCases] = useState<Case[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -27,6 +34,26 @@ export default function Index() {
       .order("created_at", { ascending: false });
     setCases((data as any[]) ?? []);
     setLoading(false);
+  };
+
+  const handleDeleteCase = async (caseId: string) => {
+    setDeleting(caseId);
+    // Delete related data first (messages via conversations)
+    const { data: convs } = await supabase.from("conversations").select("id").eq("case_id", caseId);
+    if (convs && convs.length > 0) {
+      const convIds = convs.map((c) => c.id);
+      await supabase.from("messages").delete().in("conversation_id", convIds);
+    }
+    await supabase.from("conversations").delete().eq("case_id", caseId);
+    await supabase.from("ai_outputs").delete().eq("case_id", caseId);
+    await supabase.from("documents").delete().eq("case_id", caseId);
+    const { error } = await supabase.from("cases").delete().eq("id", caseId);
+    if (error) toast.error("Erro ao excluir caso.");
+    else {
+      toast.success("Caso excluído.");
+      setCases((prev) => prev.filter((c) => c.id !== caseId));
+    }
+    setDeleting(null);
   };
 
   const filtered = cases.filter((c) => {
@@ -84,39 +111,68 @@ export default function Index() {
               const status = getStatusInfo(c.status);
               const client = (c as any).clients;
               return (
-                <Link
-                  key={c.id}
-                  to={`/case/${c.id}`}
-                  className="group bg-card border border-border rounded-xl p-5 hover:border-primary/40 hover:shadow-glow transition-all animate-fade-in"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors line-clamp-2">
-                      {c.case_title}
-                    </h3>
-                    <span className={`${status.color} text-[10px] font-semibold px-2 py-0.5 rounded-full text-foreground`}>
-                      {status.label}
-                    </span>
-                  </div>
-
-                  {client && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                      <User className="w-3 h-3" />
-                      <span>{client.full_name}</span>
+                <div key={c.id} className="relative group bg-card border border-border rounded-xl hover:border-primary/40 hover:shadow-glow transition-all animate-fade-in">
+                  <Link to={`/case/${c.id}`} className="block p-5">
+                    <div className="flex items-start justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors line-clamp-2 pr-6">
+                        {c.case_title}
+                      </h3>
+                      <span className={`${status.color} text-[10px] font-semibold px-2 py-0.5 rounded-full text-foreground`}>
+                        {status.label}
+                      </span>
                     </div>
-                  )}
 
-                  {c.process_number && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                      <Hash className="w-3 h-3" />
-                      <span className="font-mono">{c.process_number}</span>
+                    {client && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                        <User className="w-3 h-3" />
+                        <span>{client.full_name}</span>
+                      </div>
+                    )}
+
+                    {c.process_number && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                        <Hash className="w-3 h-3" />
+                        <span className="font-mono">{c.process_number}</span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Calendar className="w-3 h-3" />
+                      <span>{new Date(c.created_at).toLocaleDateString("pt-BR")}</span>
                     </div>
-                  )}
+                  </Link>
 
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Calendar className="w-3 h-3" />
-                    <span>{new Date(c.created_at).toLocaleDateString("pt-BR")}</span>
-                  </div>
-                </Link>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Excluir caso?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Todos os documentos, conversas e análises deste caso serão excluídos permanentemente.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => handleDeleteCase(c.id)}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          disabled={deleting === c.id}
+                        >
+                          {deleting === c.id ? "Excluindo..." : "Excluir"}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               );
             })}
           </div>
