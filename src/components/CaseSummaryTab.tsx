@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Sparkles, Loader2, AlertTriangle, Building2, User, Gavel, Save, BookOpen, DollarSign, CalendarIcon, ClipboardList } from "lucide-react";
+import { Sparkles, Loader2, AlertTriangle, Building2, User, Gavel, Save, BookOpen, DollarSign, CalendarIcon, ClipboardList, Phone, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import type { Case, Document, AiOutput } from "@/lib/types";
 import ReactMarkdown from "react-markdown";
@@ -43,6 +43,48 @@ function currencyToNumber(formatted: string): number | null {
   const clean = formatted.replace(/\./g, "").replace(",", ".");
   const num = parseFloat(clean);
   return isNaN(num) ? null : num;
+}
+
+function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [phone, setPhone] = useState(client.phone || "");
+  const [saving, setSaving] = useState(false);
+
+  const hasPhone = !!client.phone?.trim();
+
+  const handleSave = async () => {
+    setSaving(true);
+    const { error } = await supabase.from("clients").update({ phone }).eq("id", client.id);
+    if (error) toast.error("Erro ao salvar telefone.");
+    else { toast.success("Telefone atualizado!"); setEditing(false); onRefresh(); }
+    setSaving(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <Phone className="w-3 h-3 text-muted-foreground" />
+        <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(11) 99999-9999" className="h-7 w-40 text-xs bg-secondary border-border" />
+        <Button size="sm" variant="outline" onClick={handleSave} disabled={saving} className="h-7 text-xs px-2">
+          {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setPhone(client.phone || ""); }} className="h-7 text-xs px-2">Cancelar</Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`flex items-center gap-1.5 ${!hasPhone ? 'bg-destructive/10 rounded-md px-2 py-1' : ''}`}>
+      {!hasPhone && <AlertTriangle className="w-3 h-3 text-destructive" />}
+      <Phone className="w-3 h-3 text-muted-foreground" />
+      <span className={`text-xs ${!hasPhone ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
+        {hasPhone ? client.phone : "Sem telefone"}
+      </span>
+      <button onClick={() => setEditing(true)} className="text-muted-foreground hover:text-foreground transition-colors">
+        <Pencil className="w-3 h-3" />
+      </button>
+    </div>
+  );
 }
 
 export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Props) {
@@ -186,9 +228,9 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
             <User className="w-3.5 h-3.5" /> Cliente
           </div>
           {client && (
-            <div className="space-y-1">
+            <div className="space-y-2">
               <p className="text-sm font-medium">{client.full_name}</p>
-              <p className="text-xs text-muted-foreground">{client.phone}</p>
+              <ClientPhoneEditor client={client} onRefresh={onRefresh} />
               {client.cpf_or_identifier && <p className="text-xs text-muted-foreground">CPF: {client.cpf_or_identifier}</p>}
             </div>
           )}
