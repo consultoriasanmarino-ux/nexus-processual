@@ -157,10 +157,6 @@ export default function NewCase() {
       toast.error("Nome do cliente é obrigatório.");
       return;
     }
-    if (!phone.trim()) {
-      toast.error("Telefone é obrigatório.");
-      return;
-    }
 
     const phoneDigits = phone.replace(/\D/g, "");
 
@@ -342,13 +338,30 @@ export default function NewCase() {
                   <Input value={clientName} onChange={(e) => setClientName(e.target.value)} className="bg-secondary border-border" />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Telefone *</Label>
-                  <Input value={phone} onChange={(e) => setPhone(formatPhone(e.target.value))} maxLength={15} className="bg-secondary border-border" />
-                </div>
-                <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">CPF</Label>
                   <Input value={clientCpf} onChange={(e) => setClientCpf(e.target.value)} className="bg-secondary border-border" />
                 </div>
+              </div>
+
+              {/* Phone - separated with warning when empty */}
+              <div className={`rounded-lg p-4 space-y-2 ${!phone.trim() ? 'border-2 border-destructive/60 bg-destructive/5' : 'border border-border bg-secondary/30'}`}>
+                <Label className={`text-xs flex items-center gap-1.5 font-medium ${!phone.trim() ? 'text-destructive' : 'text-muted-foreground'}`}>
+                  {!phone.trim() && <AlertTriangle className="w-3.5 h-3.5" />}
+                  <Phone className="w-3 h-3" />
+                  Telefone do cliente
+                </Label>
+                <Input
+                  value={phone}
+                  onChange={(e) => setPhone(formatPhone(e.target.value))}
+                  maxLength={15}
+                  placeholder="(55) 99999-9999"
+                  className={`bg-secondary border-border ${!phone.trim() ? 'border-destructive/40' : ''}`}
+                />
+                {!phone.trim() && (
+                  <p className="text-[10px] text-destructive font-medium flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" /> Nenhum telefone registrado — não será possível iniciar conversa.
+                  </p>
+                )}
               </div>
 
               <hr className="border-border" />
