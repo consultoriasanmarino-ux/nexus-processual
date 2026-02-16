@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Search, Briefcase, User, Calendar, Hash, Trash2, AlertTriangle, Trash } from "lucide-react";
 import { getStatusInfo, type Case } from "@/lib/types";
+import { CaseCardExport } from "@/components/CaseCardExport";
 import { toast } from "sonner";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -32,7 +33,7 @@ export default function Index() {
   const fetchCases = async () => {
     const { data } = await supabase
       .from("cases")
-      .select("*, clients(full_name, cpf_or_identifier, phone)")
+      .select("*, clients(*)")
       .order("created_at", { ascending: false });
     setCases((data as any[]) ?? []);
     setLoading(false);
@@ -195,6 +196,7 @@ export default function Index() {
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
+                  <CaseCardExport caseData={c} />
                 </div>
               );
             })}
