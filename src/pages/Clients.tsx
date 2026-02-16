@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Layout } from "@/components/Layout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, User, Phone, Mail, Trash2, Trash, Download } from "lucide-react";
+import { Search, User, Phone, Mail, Trash2, Trash, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
 import type { Client } from "@/lib/types";
 import {
@@ -65,24 +65,58 @@ export default function Clients() {
 
   const handleExportCpfsSemTelefone = () => {
     const semTelefone = clients.filter((c) => !c.phone || c.phone.trim() === "");
-    const cpfs = semTelefone
-      .map((c) => c.cpf_or_identifier ? `${c.full_name} - CPF: ${c.cpf_or_identifier}` : `${c.full_name} - CPF: Não cadastrado`)
-      .join("\n");
 
     if (semTelefone.length === 0) {
       toast.info("Todos os clientes possuem telefone cadastrado.");
       return;
     }
 
-    const content = `CLIENTES SEM TELEFONE CADASTRADO\n${"─".repeat(40)}\nTotal: ${semTelefone.length}\n\n${cpfs}`;
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const cpfs = semTelefone
+      .map((c) => c.cpf_or_identifier || "")
+      .filter(Boolean)
+      .join("\n");
+
+    const blob = new Blob([cpfs], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "clientes-sem-telefone.txt";
+    a.download = "cpfs-sem-telefone.txt";
     a.click();
     URL.revokeObjectURL(url);
-    toast.success(`${semTelefone.length} cliente(s) exportado(s).`);
+    toast.success(`${semTelefone.length} CPF(s) exportado(s).`);
+  };
+
+  const handleUploadPhones = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    // Parse the file format: blocks separated by dashes
+    const blocks = text.split(/[-]{5,}/).filter((b) => b.trim());
+    let updated = 0;
+    for (const block of blocks) {
+      const cpfMatch = block.match(/CPF:\s*(\d+)/);
+      if (!cpfMatch) continue;
+      const cpf = cpfMatch[1];
+      const phoneMatches = block.match(/(?:- |\n\s*)(\(?\d[\d\s()-]+\d)/g);
+      if (!phoneMatches || phoneMatches.length === 0) continue;
+      const phones = phoneMatches.map((p) => p.replace(/^[\s-]+/, "").trim()).filter(Boolean);
+      // Find client by CPF
+      const client = clients.find((c) => c.cpf_or_identifier?.replace(/\D/g, "") === cpf.replace(/\D/g, ""));
+      if (!client) continue;
+      // Merge phones: keep existing + add new
+      const existingPhones = client.phone ? client.phone.split(/[,;]\s*/).filter(Boolean) : [];
+      const allPhones = [...new Set([...existingPhones, ...phones])];
+      const newPhone = allPhones.join(", ");
+      if (newPhone !== client.phone) {
+        await supabase.from("clients").update({ phone: newPhone }).eq("id", client.id);
+        updated++;
+      }
+    }
+    // Refresh clients
+    const { data } = await supabase.from("clients").select("*").order("full_name");
+    setClients((data as Client[]) ?? []);
+    toast.success(`${updated} cliente(s) atualizado(s) com novos telefones.`);
+    e.target.value = "";
   };
 
   const filtered = clients.filter((c) => {
@@ -99,10 +133,16 @@ export default function Clients() {
             <p className="text-sm text-muted-foreground">{clients.length} cliente(s)</p>
           </div>
           {clients.length > 0 && (
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Button variant="outline" size="sm" onClick={handleExportCpfsSemTelefone} className="text-xs">
                 <Download className="w-4 h-4 mr-1.5" /> CPFs sem telefone
               </Button>
+              <label>
+                <input type="file" accept=".txt" className="hidden" onChange={handleUploadPhones} />
+                <Button variant="outline" size="sm" className="text-xs cursor-pointer" asChild>
+                  <span><Upload className="w-4 h-4 mr-1.5" /> Importar telefones</span>
+                </Button>
+              </label>
               <Button variant="outline" onClick={() => setShowDeleteAll(true)} className="text-destructive border-destructive/30 hover:bg-destructive/10">
                 <Trash className="w-4 h-4 mr-2" /> Apagar Todos
               </Button>
