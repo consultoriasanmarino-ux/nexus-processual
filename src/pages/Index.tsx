@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Briefcase, User, Calendar, Hash, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, Search, Briefcase, User, Calendar, Hash, Trash2, AlertTriangle, Trash } from "lucide-react";
 import { getStatusInfo, type Case } from "@/lib/types";
 import { toast } from "sonner";
 import {
@@ -13,6 +13,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { PinConfirmDialog } from "@/components/PinConfirmDialog";
 
 export default function Index() {
   const { user } = useAuth();
@@ -21,6 +22,7 @@ export default function Index() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [showDeleteAll, setShowDeleteAll] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -56,6 +58,13 @@ export default function Index() {
     setDeleting(null);
   };
 
+  const handleDeleteAll = async () => {
+    for (const c of cases) {
+      await handleDeleteCase(c.id);
+    }
+    toast.success("Todos os casos foram excluídos.");
+  };
+
   const filtered = cases.filter((c) => {
     const q = search.toLowerCase();
     return (
@@ -74,9 +83,16 @@ export default function Index() {
             <h1 className="text-2xl font-bold">Casos</h1>
             <p className="text-sm text-muted-foreground mt-1">{cases.length} caso(s) registrados</p>
           </div>
-          <Button onClick={() => navigate("/new-case")} className="bg-gradient-gold hover:opacity-90 text-primary-foreground font-semibold">
-            <Plus className="w-4 h-4 mr-2" /> Novo Caso
-          </Button>
+          <div className="flex gap-2">
+            {cases.length > 0 && (
+              <Button variant="outline" onClick={() => setShowDeleteAll(true)} className="text-destructive border-destructive/30 hover:bg-destructive/10">
+                <Trash className="w-4 h-4 mr-2" /> Apagar Todos
+              </Button>
+            )}
+            <Button onClick={() => navigate("/new-case")} className="bg-gradient-gold hover:opacity-90 text-primary-foreground font-semibold">
+              <Plus className="w-4 h-4 mr-2" /> Novo Caso
+            </Button>
+          </div>
         </div>
 
         <div className="relative mb-6">
@@ -184,6 +200,13 @@ export default function Index() {
             })}
           </div>
         )}
+        <PinConfirmDialog
+          open={showDeleteAll}
+          onOpenChange={setShowDeleteAll}
+          title="Apagar todos os casos?"
+          description="Todos os casos, documentos, conversas e análises serão excluídos permanentemente."
+          onConfirm={handleDeleteAll}
+        />
       </div>
     </Layout>
   );

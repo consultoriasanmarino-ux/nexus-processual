@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Layout } from "@/components/Layout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, User, Phone, Mail, Trash2 } from "lucide-react";
+import { Search, User, Phone, Mail, Trash2, Trash } from "lucide-react";
 import { toast } from "sonner";
 import type { Client } from "@/lib/types";
 import {
@@ -12,6 +12,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { PinConfirmDialog } from "@/components/PinConfirmDialog";
 
 export default function Clients() {
   const { user } = useAuth();
@@ -19,6 +20,7 @@ export default function Clients() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [showDeleteAll, setShowDeleteAll] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -46,6 +48,21 @@ export default function Clients() {
     setDeleting(null);
   };
 
+  const handleDeleteAll = async () => {
+    // Check if any client has cases
+    const { data: allCases } = await supabase.from("cases").select("client_id");
+    const clientsWithCases = new Set((allCases ?? []).map((c) => c.client_id));
+    const deletable = clients.filter((c) => !clientsWithCases.has(c.id));
+    const blocked = clients.length - deletable.length;
+
+    for (const c of deletable) {
+      await supabase.from("clients").delete().eq("id", c.id);
+    }
+    setClients((prev) => prev.filter((c) => clientsWithCases.has(c.id)));
+    if (blocked > 0) toast.info(`${blocked} cliente(s) com casos vinculados não foram excluídos.`);
+    toast.success(`${deletable.length} cliente(s) excluído(s).`);
+  };
+
   const filtered = clients.filter((c) => {
     const q = search.toLowerCase();
     return c.full_name.toLowerCase().includes(q) || c.cpf_or_identifier?.toLowerCase().includes(q) || c.phone.includes(q);
@@ -54,8 +71,17 @@ export default function Clients() {
   return (
     <Layout>
       <div className="p-4 md:p-8 max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold mb-1">Clientes</h1>
-        <p className="text-sm text-muted-foreground mb-6">{clients.length} cliente(s)</p>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold mb-1">Clientes</h1>
+            <p className="text-sm text-muted-foreground">{clients.length} cliente(s)</p>
+          </div>
+          {clients.length > 0 && (
+            <Button variant="outline" onClick={() => setShowDeleteAll(true)} className="text-destructive border-destructive/30 hover:bg-destructive/10">
+              <Trash className="w-4 h-4 mr-2" /> Apagar Todos
+            </Button>
+          )}
+        </div>
 
         <div className="relative mb-6">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -119,6 +145,13 @@ export default function Clients() {
             ))}
           </div>
         )}
+        <PinConfirmDialog
+          open={showDeleteAll}
+          onOpenChange={setShowDeleteAll}
+          title="Apagar todos os clientes?"
+          description="Clientes sem casos vinculados serão excluídos permanentemente. Clientes com casos serão mantidos."
+          onConfirm={handleDeleteAll}
+        />
       </div>
     </Layout>
   );
