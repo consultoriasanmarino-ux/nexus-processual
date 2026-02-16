@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Layout } from "@/components/Layout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, User, Phone, Mail, Trash2, Trash } from "lucide-react";
+import { Search, User, Phone, Mail, Trash2, Trash, Download } from "lucide-react";
 import { toast } from "sonner";
 import type { Client } from "@/lib/types";
 import {
@@ -63,6 +63,28 @@ export default function Clients() {
     toast.success(`${deletable.length} cliente(s) excluído(s).`);
   };
 
+  const handleExportCpfsSemTelefone = () => {
+    const semTelefone = clients.filter((c) => !c.phone || c.phone.trim() === "");
+    const cpfs = semTelefone
+      .map((c) => c.cpf_or_identifier ? `${c.full_name} - CPF: ${c.cpf_or_identifier}` : `${c.full_name} - CPF: Não cadastrado`)
+      .join("\n");
+
+    if (semTelefone.length === 0) {
+      toast.info("Todos os clientes possuem telefone cadastrado.");
+      return;
+    }
+
+    const content = `CLIENTES SEM TELEFONE CADASTRADO\n${"─".repeat(40)}\nTotal: ${semTelefone.length}\n\n${cpfs}`;
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "clientes-sem-telefone.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`${semTelefone.length} cliente(s) exportado(s).`);
+  };
+
   const filtered = clients.filter((c) => {
     const q = search.toLowerCase();
     return c.full_name.toLowerCase().includes(q) || c.cpf_or_identifier?.toLowerCase().includes(q) || c.phone.includes(q);
@@ -77,9 +99,14 @@ export default function Clients() {
             <p className="text-sm text-muted-foreground">{clients.length} cliente(s)</p>
           </div>
           {clients.length > 0 && (
-            <Button variant="outline" onClick={() => setShowDeleteAll(true)} className="text-destructive border-destructive/30 hover:bg-destructive/10">
-              <Trash className="w-4 h-4 mr-2" /> Apagar Todos
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={handleExportCpfsSemTelefone} className="text-xs">
+                <Download className="w-4 h-4 mr-1.5" /> CPFs sem telefone
+              </Button>
+              <Button variant="outline" onClick={() => setShowDeleteAll(true)} className="text-destructive border-destructive/30 hover:bg-destructive/10">
+                <Trash className="w-4 h-4 mr-2" /> Apagar Todos
+              </Button>
+            </div>
           )}
         </div>
 
