@@ -29,14 +29,13 @@ REGRAS GERAIS:
 - Extraia Nome, CPF, Réu, Processo e Valor.
 - Todo fone do cliente encontrado DEVE ir para "phone_contract".
 
-REGRAS DO RESUMO (TOLERÂNCIA ZERO):
-1. O campo "summary" deve ter no MÁXIMO 150 CARACTERES.
-2. Deve ser apenas UMA ÚNICA FRASE curta.
-3. PROIBIDO: Números de contrato, datas, valores, jurisprudência ou narrativa de fatos.
-4. OBRIGATÓRIO: Apenas o tipo da ação e contra quem.
-5. ERRO FATAL: Se o resumo tiver mais de 150 caracteres, a extração falhará.
+REGRAS DO RESUMO (EQUILÍBRIO):
+1. O campo "summary" deve ser um RESUMO EXECUTIVO de 2 a 3 frases concisas.
+2. Deve ser COMPLETO (não corte informações no meio), mas sem enrolação.
+3. FOCO: Identificar o Autor, o Réu, o objetivo da ação e o motivo principal (ex: negativação indevida ou revisão de juros).
+4. EVITE: Citações de leis, jurisprudência, longas listas de números de contrato ou listas exaustivas de valores e datas.
 
-Exemplo de resumo: "Ação Revisional de Juros contra o Banco OMNI devido a taxas abusivas."
+Exemplo: "O autor Anderson Silva propõe ação contra o Banco OMNI buscando a declaração de indébito de valores não contratados. Alega que sofreu negativação indevida e requer danos morais. O caso envolve contratos de financiamento de 2015."
 
 JSON OBRIGATÓRIO:
 {
