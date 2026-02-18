@@ -31,13 +31,15 @@ Você receberá dois textos:
 
 TAREFA: Extraia dados estruturados combinando as informações de ambos os documentos.
 
-DIRETRIZES DE EXTRAÇÃO DE TELEFONE (CRÍTICO):
-- O campo "phone_contract" é o seu objetivo principal. Ele deve conter o telefone de contato direto do CLIENTE.
-- ONDE BUSCAR:
-  1. NO CONTRATO (CCB): Procure no bloco de "Dados do Emitente/Devedor".
-  2. NA PETIÇÃO: Procure na seção de "QUALIFICAÇÃO DO AUTOR" (geralmente no início, onde consta o Nome, CPF e Endereço). Muitas vezes o telefone está logo após o endereço ou e-mail do autor.
-- CUIDADO COM ADVOGADOS: Verifique o contexto. Se o telefone estiver próximo de um número de OAB ou no rodapé junto aos dados do advogado, IGNORE-O. O telefone do cliente geralmente aparece junto aos dados pessoais dele (CPF, RG, Estado Civil).
-- PRIORIDADE: Se encontrar um telefone na qualificação do autor na petição, considere-o como o telefone de contato (phone_contract), mesmo que o documento de contrato não tenha sido enviado.
+DIRETRIZES DE EXTRAÇÃO DE TELEFONE (ALTA PRIORIDADE):
+- O campo "phone_petition" DEVE conter o telefone encontrado na qualificação do autor na Petição Inicial.
+- ONDE BUSCAR: Logo no início da petição, após o nome do Autor, CPF, endereço e e-mail. É comum aparecer como "telefone: (XX) XXXXX-XXXX".
+- REGRA DE OURO: Se o telefone estiver na mesma frase ou parágrafo dos dados pessoais do autor (Nome, CPF, Estado Civil), CAPTURE-O SEM HESITAR. 
+- ATENÇÃO: Muitas petições dizem "...telefone (XX) XXXX, por seu procurador...". Mesmo que a palavra "procurador" apareça depois, o telefone pertence ao AUTOR se estiver listado junto com o e-mail e endereço dele.
+- CUIDADO COM ADVOGADOS: Só ignore o número se ele estiver claramente associado a um carimbo de advogado, rodapé institucional ou logo após a menção à OAB.
+
+DADOS DO CONTRATO (CCB):
+- O campo "phone_contract" deve conter exclusivamente o telefone extraído do quadro de dados do EMITENTE no contrato/CCB.
 
 DADOS ADICIONAIS:
 - O AUTOR/REQUERENTE (da petição) é o mesmo CLIENTE (do contrato).
@@ -59,8 +61,8 @@ Responda APENAS com JSON válido:
     {"name": "...", "oab": "...", "role": "advogado do autor"}
   ],
   "partner_law_firm": "escritório de advocacia",
-  "phone_petition": "Telefone da Petição (apenas dígitos)",
-  "phone_contract": "Telefone do Cliente/Contrato (apenas dígitos) - extraído do CCB",
+  "phone_petition": "Telefone encontrado na qualificação da PETIÇÃO (apenas dígitos)",
+  "phone_contract": "Telefone encontrado no CONTRATO/CCB (apenas dígitos)",
   "summary": "resumo extremamente conciso em 2-3 frases em linguagem simples para leigos, focando apenas no objetivo da ação e no veículo/banco envolvido.",
   "valores_citados": [],
   "alertas_golpe": [],
