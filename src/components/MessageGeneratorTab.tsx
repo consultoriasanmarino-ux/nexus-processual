@@ -16,7 +16,7 @@ interface Props {
   onRefresh: () => void;
 }
 
-const DEFAULT_CONTEXT = "Somos uma empresa parceira do escritório responsável, atuamos no acompanhamento processual e na comunicação operacional com clientes, sem substituir o advogado.";
+const DEFAULT_CONTEXT = "Somos uma empresa parceira do escritório responsável, notificamos o cliente sobre valores integrais liberados e auxiliamos no recebimento seguro junto ao Dr. Bruno.";
 const DEFAULT_OBJECTIVE = "Gerar resposta e continuar a conversa com confiança.";
 
 type GeneratedMessage = {
