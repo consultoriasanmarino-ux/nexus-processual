@@ -6,6 +6,15 @@ export function cn(...inputs: ClassValue[]) {
 }
 export function formatPhone(value: string | null | undefined): string {
   if (!value) return "";
+
+  // Se houver vírgulas, trata como uma lista de telefones
+  if (value.includes(",")) {
+    return value.split(",")
+      .map(p => formatPhone(p.trim()))
+      .filter(Boolean)
+      .join(", ");
+  }
+
   const digits = value.replace(/\D/g, "");
   if (!digits) return "";
 

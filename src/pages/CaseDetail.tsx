@@ -93,12 +93,31 @@ export default function CaseDetail() {
             <div>
               <h1 className="text-xl font-bold">{caseData.case_title}</h1>
               {client && (
-                <p className="text-sm text-muted-foreground mt-1">
-                  Cliente: {client.full_name}
-                  {client.phone_contract && <span className="ml-2">— Contrato: {formatPhone(client.phone_contract)}</span>}
-                  {client.phone && <span className="ml-2">— Consulta: {formatPhone(client.phone)}</span>}
-                  {!client.phone && !client.phone_contract && <span className="ml-2 text-destructive font-medium">— Sem telefone</span>}
-                </p>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Autor: <span className="font-bold">{client.full_name}</span>
+                  </p>
+
+                  {client.phone_contract && (
+                    <div className="flex items-center gap-1.5 text-xs bg-primary/10 text-primary-foreground px-2 py-0.5 rounded-md border border-primary/20">
+                      <span className="font-semibold uppercase text-[10px]">Contrato:</span>
+                      <span>{formatPhone(client.phone_contract)}</span>
+                    </div>
+                  )}
+
+                  {client.phone && (
+                    <div className="flex items-center gap-1.5 text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-md border border-border">
+                      <span className="font-semibold uppercase text-[10px]">Consulta:</span>
+                      <span>{formatPhone(client.phone)}</span>
+                    </div>
+                  )}
+
+                  {!client.phone && !client.phone_contract && (
+                    <div className="flex items-center gap-1.5 text-[10px] text-destructive font-medium bg-destructive/10 rounded-md px-2 py-0.5 border border-destructive/20">
+                      Sem telefone registrado
+                    </div>
+                  )}
+                </div>
               )}
               {caseData.process_number && (
                 <p className="text-xs text-muted-foreground font-mono mt-1">Processo: {caseData.process_number}</p>
