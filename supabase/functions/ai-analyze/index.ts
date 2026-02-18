@@ -23,28 +23,39 @@ serve(async (req) => {
 
     const isOmni = contractType === "omni";
 
-    const systemPrompt = `Você é um robô de extração de dados jurídicos. Extraia as informações dos textos fornecidos.
+    const systemPrompt = `Você é um especialista em análise de documentos jurídicos brasileiros (Petições Iniciais e Contratos de Financiamento/CCB).
+Sua missão é extrair dados estruturados para cadastrar um novo caso no sistema.
 
-REGRAS CRÍTICAS DE TELEFONE:
-- phone_petition: Procure fones no início da petição. Ignorar se estiver associado a OAB. Se o fone vier ANTES de "por seu procurador", ele é do AUTOR.
-- phone_contract: Procure no CCB/Contrato.
-- Se não encontrar, use null. NÃO USE PLACEHOLDERS.
+DIRETRIZES DE EXTRAÇÃO (CRÍTICO):
+1. TELEFONES DO CLIENTE (AUTOR):
+   - Os telefones são a informação mais importante. Procure exaustivamente.
+   - NA PETIÇÃO: Geralmente no primeiro parágrafo (qualificação), junto ao Nome, CPF e Endereço. Ex: "...telefone (54) 99606-3467...".
+   - NO CONTRATO: Procure no bloco "Dados do Emitente" ou "Dados do Devedor".
+   - MAPEAMENTO:
+     - Se o fone estiver na Petição Inicial -> salve em "phone_petition".
+     - Se o fone estiver no Contrato/CCB -> salve em "phone_contract".
+     - Se encontrar um fone e não tiver certeza absoluta de onde veio, priorize o campo "phone_petition".
+   - FILTRO: Ignore telefones claramente associados a advogados (que tenham OAB ao lado) ou do fórum/tribunal.
 
-JSON OBRIGATÓRIO:
+2. DADOS CADASTRAIS:
+   - Extraia Nome Completo, CPF (apenas números), Réu (Banco/Financeira), Número do Processo e Valor da Causa.
+   - Forneça um resumo conciso (summary) de 2-3 frases.
+
+Responda APENAS com JSON válido conforme este modelo:
 {
-  "client_name": "NOME",
-  "client_cpf": "CPF",
-  "defendant": "REU",
-  "case_type": "TIPO",
-  "court": "VARA",
-  "process_number": "PROCESSO",
+  "client_name": "Nome",
+  "client_cpf": "12345678901",
+  "defendant": "Nome do Banco",
+  "case_type": "Tipo da ação",
+  "court": "Vara e Comarca",
+  "process_number": "Número",
   "distribution_date": "YYYY-MM-DD",
   "case_value": 0.00,
-  "lawyers": [{"name": "NAME", "oab": "OAB", "role": "ROLE"}],
-  "partner_law_firm": "FIRM",
-  "phone_petition": "DIGITOS_OU_NULL",
-  "phone_contract": "DIGITOS_OU_NULL",
-  "summary": "RESUMO"
+  "lawyers": [{"name": "...", "oab": "...", "role": "..."}],
+  "partner_law_firm": "Escritório",
+  "phone_petition": "apenas_numeros",
+  "phone_contract": "apenas_numeros",
+  "summary": "Resumo aqui."
 }`;
 
     // Truncate texts to avoid token limits
