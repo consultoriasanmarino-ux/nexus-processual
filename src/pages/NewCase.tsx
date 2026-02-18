@@ -95,6 +95,25 @@ export default function NewCase() {
     return fullText;
   };
 
+  const renderPdfPagesToImages = async (file: File, maxPages = 3): Promise<string[]> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const images: string[] = [];
+
+    for (let i = 1; i <= Math.min(pdf.numPages, maxPages); i++) {
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: 1.5 });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext("2d")!;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      images.push(canvas.toDataURL("image/jpeg", 0.8));
+    }
+
+    return images;
+  };
+
   const handleProcessPdf = async () => {
     if (!pdfFile && !contractFile) {
       toast.error("Selecione pelo menos um arquivo.");
@@ -104,7 +123,14 @@ export default function NewCase() {
     setExtracting(true);
     try {
       const pdfText = pdfFile ? await extractTextFromPdf(pdfFile) : "";
-      const contractText = contractFile ? await extractTextFromPdf(contractFile) : "";
+      let contractText = contractFile ? await extractTextFromPdf(contractFile) : "";
+      let contractImages: string[] = [];
+
+      // If contract text extraction is poor (scanned PDF), render pages as images for Gemini OCR
+      if (contractFile && contractText.replace(/\s+/g, "").length < 50) {
+        console.log("Contract text extraction poor, using image fallback for OCR");
+        contractImages = await renderPdfPagesToImages(contractFile, 3);
+      }
 
       const { data, error } = await supabase.functions.invoke("ai-analyze", {
         body: {
@@ -112,6 +138,7 @@ export default function NewCase() {
           contractText: contractText,
           contractType: contractType,
           phoneProvided: phone,
+          contractImages: contractImages.length > 0 ? contractImages : undefined,
         },
       });
 
