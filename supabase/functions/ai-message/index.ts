@@ -54,7 +54,12 @@ serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     const body = await req.json();
-    const { action, caseId, caseTitle, distributionDate, defendant, caseType, court, partnerFirm, partnerLawyer, companyContext, context, objective, tone, formality, existingOutputs, recentMessages, caseValue, userId, image, userQuery } = body;
+    console.log("AI Message request body:", JSON.stringify(body).slice(0, 1000));
+    const {
+      action, caseId, caseTitle, distributionDate, defendant, caseType, court,
+      partnerFirm, partnerLawyer, companyContext, context, objective, tone,
+      formality, existingOutputs, recentMessages, caseValue, image, userQuery
+    } = body;
 
     const timePolicy = getTimePolicy(distributionDate, caseValue ?? null);
     const compCtx = companyContext || DEFAULT_COMPANY_CONTEXT;
@@ -106,18 +111,32 @@ Responda rigorosamente neste formato JSON:
   ],
   "advice": "Dica estratégica rápida para o operador"
 }`;
-    } else if (action === "suggest_reply") {
-      // ... (existing suggest_reply logic, simplified for brevity here but I'll keep it or merge)
-      // Actually, I'll merge suggest_reply into the new interactive chat if I can, or keep it separate.
-      // Let's keep the existing suggest_reply logic just in case, but updated.
+    } else {
+      // General message generator (covers approach_v1, variations_v1, suggest_reply, etc.)
       const msgsText = (recentMessages || []).map((m: any) => `${m.sender}: ${m.text}`).join("\n");
-      systemPrompt = `Você é um assistente de comunicação processual.
+      systemPrompt = `Você é um assistente de comunicação jurídica especializado em abordagem de clientes.
+CONTEXTO DA EMPRESA:
 ${compCtx}
+
 ${caseContext}
-Analise a conversa e sugira respostas.
+
+OBJETIVO DA AÇÃO: ${action}
+DIRETRIZES ADICIONAIS:
+- Tom: ${tone || "profissional"}
+- Formalidade: ${formality || "média"}
+- Restrição: Nunca mencione percentuais de honorários desnecessários.
+
 Responda em JSON:
-{"state": "...", "short": "...", "standard": "..."}`;
-      userPrompt = `Conversa atual:\n${msgsText}`;
+{
+  "message": "Mensagem principal gerada",
+  "short_variant": "Versão curta para envio rápido",
+  "confidence": 9,
+  "scam_risk": "baixo",
+  "scam_reasons": []
+}`;
+      userPrompt = `Gere uma mensagem para o caso.
+${msgsText ? `\nHistórico recente:\n${msgsText}` : ""}
+${userQuery ? `\nInstrução específica: ${userQuery}` : ""}`;
     }
 
     const aiMessages: any[] = [
@@ -125,7 +144,6 @@ Responda em JSON:
     ];
 
     if (image) {
-      // For images, we use the specific format expected by the gateway (Gemini style)
       aiMessages.push({
         role: "user",
         content: [
@@ -149,8 +167,9 @@ Responda em JSON:
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.0-flash", // Updated to Flash 2.0 for better multimodal
+        model: "google/gemini-2.5-flash",
         messages: aiMessages,
+        temperature: 0.2,
         response_format: { type: "json_object" }
       }),
     });
@@ -158,30 +177,31 @@ Responda em JSON:
     if (!response.ok) {
       const errText = await response.text();
       console.error("AI gateway error:", response.status, errText);
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Limite de requisições excedido." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Créditos de IA insuficientes." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      throw new Error("AI gateway error");
+      return new Response(JSON.stringify({ error: `Gateway error: ${response.status}`, details: errText }), {
+        status: response.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const aiResult = await response.json();
-    const content = aiResult.choices?.[0]?.message?.content || "";
+    const content = aiResult.choices?.[0]?.message?.content || "{}";
 
     let parsed: any = {};
     try {
       const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
-    } catch {
-      parsed = action === "suggest_reply"
-        ? { state: "indefinido", short: content.slice(0, 100), standard: content }
-        : { messages: [{ message: content, short_variant: content.slice(0, 100), confidence: 5, scam_risk: "médio", scam_reasons: [] }] };
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error("No JSON in response");
+      }
+    } catch (parseErr) {
+      console.error("Parse error:", parseErr, "Content:", content);
+      parsed = {
+        analysis: "Não foi possível analisar detalhadamente.",
+        suggestions: [{ "label": "Erro", "text": content.slice(0, 100) }],
+        message: content,
+        short_variant: content.slice(0, 50),
+        advice: "Tente novamente com uma mensagem mais clara."
+      };
     }
 
     return new Response(JSON.stringify(parsed), {
