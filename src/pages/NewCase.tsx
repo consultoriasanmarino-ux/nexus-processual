@@ -120,6 +120,8 @@ export default function NewCase() {
 
       setExtracted(ext);
 
+      console.log("Dados extraídos pela IA:", ext);
+
       // Pre-fill fields
       setClientName(ext.client_name || "");
       setClientCpf(ext.client_cpf || "");
@@ -130,27 +132,28 @@ export default function NewCase() {
       setProcessNumber(ext.process_number || "");
       setDistributionDate(ext.distribution_date || "");
       setPartnerFirm(ext.partner_law_firm || "");
-      // Format case_value from AI (comes as "50000.00" string)
+
+      // Format case_value from AI
       if (ext.case_value) {
         const numVal = parseFloat(String(ext.case_value).replace(/[^\d.]/g, ""));
         if (!isNaN(numVal)) {
           setCaseValue(numVal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-        } else {
-          setCaseValue("");
         }
-      } else {
-        setCaseValue("");
       }
-      // Pick the first lawyer as partner
+
+      // Pick lawyers
       if (ext.lawyers?.length > 0) {
         setPartnerLawyer(ext.lawyers.map((l) => `${l.name} (${l.oab})`).join(", "));
       }
-      // If phone was found in PDF
+
+      // Pre-fill phones
       if (ext.phone_petition) {
+        console.log("Telefone da petição identificado:", ext.phone_petition);
         setPhonePetition(formatPhone(ext.phone_petition));
       }
-      // If phone was found in Contract
+
       if (ext.phone_contract) {
+        console.log("Telefone do contrato identificado:", ext.phone_contract);
         setPhoneContract(formatPhone(ext.phone_contract));
       }
 

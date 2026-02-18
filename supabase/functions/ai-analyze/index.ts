@@ -23,39 +23,28 @@ serve(async (req) => {
 
     const isOmni = contractType === "omni";
 
-    const systemPrompt = `Você é um assistente jurídico especializado em análise de documentos brasileiros de financiamento e petições iniciais.
-    
-Você receberá dois textos:
-1. TEXTO DA PETIÇÃO: Uma petição inicial de um processo judicial.
-2. TEXTO DO CONTRATO (CCB): Um contrato de financiamento (Cédula de Crédito Bancário - CCB).
+    const systemPrompt = `Você é um robô de extração de dados jurídicos. Extraia as informações dos textos fornecidos.
 
-TAREFA: Extraia dados estruturados combinando as informações de ambos os documentos.
+REGRAS CRÍTICAS DE TELEFONE:
+- phone_petition: Procure fones no início da petição. Ignorar se estiver associado a OAB. Se o fone vier ANTES de "por seu procurador", ele é do AUTOR.
+- phone_contract: Procure no CCB/Contrato.
+- Se não encontrar, use null. NÃO USE PLACEHOLDERS.
 
-DIRETRIZES DE EXTRAÇÃO DE TELEFONE (ERRO ZERO):
-- O campo "phone_petition" é OBRIGATÓRIO se houver qualquer número de telefone na qualificação do autor.
-- EXEMPLO DE PADRÃO REAL: "ANDERSON SILVA..., residente em..., e-mail..., fone (54) 99606-3467, por seu procurador..."
-- NESTE EXEMPLO: O número (54) 99606-3467 PERTENCE AO AUTOR. 
-- REGRA ABSOLUTA: Ignorar a palavra "procurador" ou "advogado" se ela vier DEPOIS do telefone na mesma frase de qualificação. O telefone que vem ANTES de "por seu procurador" é SEMPRE do cliente.
-- FORMATO: Extraia apenas os dígitos. Se o número for "54996063467", salve exatamente assim.
-
-DADOS DO CONTRATO (CCB):
-- O campo "phone_contract" deve vir do quadro de emitente do contrato (se enviado).
-
-ESTRUTURA DE RESPOSTA (JSON):
+JSON OBRIGATÓRIO:
 {
-  "client_name": "NOME DO AUTOR",
-  "client_cpf": "CPF DO AUTOR",
-  "defendant": "NOME DO RÉU",
-  "case_type": "TIPO DA AÇÃO",
-  "court": "VARA/COMARCA",
-  "process_number": "NÚMERO DO PROCESSO",
+  "client_name": "NOME",
+  "client_cpf": "CPF",
+  "defendant": "REU",
+  "case_type": "TIPO",
+  "court": "VARA",
+  "process_number": "PROCESSO",
   "distribution_date": "YYYY-MM-DD",
-  "case_value": 12345.67,
-  "lawyers": [{"name": "...", "oab": "...", "role": "..."}],
-  "partner_law_firm": "escritório",
-  "phone_petition": "apenas_digitos_do_autor_na_peticao",
-  "phone_contract": "apenas_digitos_do_contrato",
-  "summary": "resumo extremamente conciso em 2-3 frases em linguagem simples para leigos, focando apenas no objetivo da ação e no veículo/banco envolvido."
+  "case_value": 0.00,
+  "lawyers": [{"name": "NAME", "oab": "OAB", "role": "ROLE"}],
+  "partner_law_firm": "FIRM",
+  "phone_petition": "DIGITOS_OU_NULL",
+  "phone_contract": "DIGITOS_OU_NULL",
+  "summary": "RESUMO"
 }`;
 
     // Truncate texts to avoid token limits
