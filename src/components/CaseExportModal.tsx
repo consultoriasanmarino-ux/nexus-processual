@@ -45,7 +45,6 @@ function buildExportText(caseData: Case): string {
     lines.push("───────────────────────────────────────");
     lines.push(`Nome: ${toTitleCase(client.full_name)}`);
     if (client.phone_contract) lines.push(`Tel. Contrato: ${formatPhone(client.phone_contract)}`);
-    if (client.phone_petition) lines.push(`Tel. Petição: ${formatPhone(client.phone_petition)}`);
     if (client.phone) lines.push(`Tel. Consulta: ${formatPhone(client.phone)}`);
     if (client.cpf_or_identifier) lines.push(`CPF: ${formatCPF(client.cpf_or_identifier)}`);
   }

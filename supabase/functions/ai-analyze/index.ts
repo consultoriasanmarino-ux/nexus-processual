@@ -23,39 +23,48 @@ serve(async (req) => {
 
     const isOmni = contractType === "omni";
 
-    const systemPrompt = `Você é um especialista em análise de documentos jurídicos brasileiros (Petições Iniciais e Contratos de Financiamento/CCB).
-Sua missão é extrair dados estruturados para cadastrar um novo caso no sistema.
+    const systemPrompt = `Você é um assistente jurídico especializado em análise de documentos brasileiros de financiamento e petições iniciais.
+    
+Você receberá dois textos:
+1. TEXTO DA PETIÇÃO: Uma petição inicial de um processo judicial.
+2. TEXTO DO CONTRATO (CCB): Um contrato de financiamento (Cédula de Crédito Bancário - CCB).
 
-DIRETRIZES DE EXTRAÇÃO (CRÍTICO):
-1. TELEFONES DO CLIENTE (AUTOR):
-   - Os telefones são a informação mais importante. Procure exaustivamente.
-   - NA PETIÇÃO: Geralmente no primeiro parágrafo (qualificação), junto ao Nome, CPF e Endereço. Ex: "...telefone (54) 99606-3467...".
-   - NO CONTRATO: Procure no bloco "Dados do Emitente" ou "Dados do Devedor".
-   - MAPEAMENTO:
-     - Se o fone estiver na Petição Inicial -> salve em "phone_petition".
-     - Se o fone estiver no Contrato/CCB -> salve em "phone_contract".
-     - Se encontrar um fone e não tiver certeza absoluta de onde veio, priorize o campo "phone_petition".
-   - FILTRO: Ignore telefones claramente associados a advogados (que tenham OAB ao lado) ou do fórum/tribunal.
+TAREFA: Extraia dados estruturados combinando as informações de ambos os documentos.
 
-2. DADOS CADASTRAIS:
-   - Extraia Nome Completo, CPF (apenas números), Réu (Banco/Financeira), Número do Processo e Valor da Causa.
-   - Forneça um resumo conciso (summary) de 2-3 frases.
+DIRETRIZES DE EXTRAÇÃO DE TELEFONE (CRÍTICO):
+- O campo "phone_contract" é o seu objetivo principal. Ele deve conter o telefone de contato direto do CLIENTE.
+- ONDE BUSCAR:
+  1. NO CONTRATO (CCB): Procure no bloco de "Dados do Emitente/Devedor".
+  2. NA PETIÇÃO: Procure na seção de "QUALIFICAÇÃO DO AUTOR" (geralmente no início, onde consta o Nome, CPF e Endereço). Muitas vezes o telefone está logo após o endereço ou e-mail do autor.
+- CUIDADO COM ADVOGADOS: Verifique o contexto. Se o telefone estiver próximo de um número de OAB ou no rodapé junto aos dados do advogado, IGNORE-O. O telefone do cliente geralmente aparece junto aos dados pessoais dele (CPF, RG, Estado Civil).
+- PRIORIDADE: Se encontrar um telefone na qualificação do autor na petição, considere-o como o telefone de contato (phone_contract), mesmo que o documento de contrato não tenha sido enviado.
 
-Responda APENAS com JSON válido conforme este modelo:
+DADOS ADICIONAIS:
+- O AUTOR/REQUERENTE (da petição) é o mesmo CLIENTE (do contrato).
+- O RÉU (da petição) é a INSTITUIÇÃO CREDORA (do contrato).
+- Extraia sempre o NOME COMPLETO e CPF do cliente.
+- "phone_found" pode conter outros números secundários achados na petição, mas o principal deve ir para "phone_contract".
+
+Responda APENAS com JSON válido:
 {
-  "client_name": "Nome",
-  "client_cpf": "12345678901",
-  "defendant": "Nome do Banco",
-  "case_type": "Tipo da ação",
-  "court": "Vara e Comarca",
-  "process_number": "Número",
+  "client_name": "nome completo do autor",
+  "client_cpf": "CPF do autor",
+  "defendant": "nome do réu (geralmente o banco/financeira)",
+  "case_type": "tipo de ação (ex: Revisional de Veículo)",
+  "court": "tribunal e vara",
+  "process_number": "número do processo",
   "distribution_date": "YYYY-MM-DD",
-  "case_value": 0.00,
-  "lawyers": [{"name": "...", "oab": "...", "role": "..."}],
-  "partner_law_firm": "Escritório",
-  "phone_petition": "apenas_numeros",
-  "phone_contract": "apenas_numeros",
-  "summary": "Resumo aqui."
+  "case_value": 12345.67,
+  "lawyers": [
+    {"name": "...", "oab": "...", "role": "advogado do autor"}
+  ],
+  "partner_law_firm": "escritório de advocacia",
+  "phone_found": "telefone secundário (apenas dígitos)",
+  "phone_contract": "Telefone do Cliente/Contrato (apenas dígitos) - extraído da qualificação ou do CCB",
+  "summary": "resumo extremamente conciso em 2-3 frases em linguagem simples para leigos, focando apenas no objetivo da ação e no veículo/banco envolvido.",
+  "valores_citados": [],
+  "alertas_golpe": [],
+  "perguntas_provaveis": []
 }`;
 
     // Truncate texts to avoid token limits

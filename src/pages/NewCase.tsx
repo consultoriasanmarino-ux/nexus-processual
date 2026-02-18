@@ -35,7 +35,7 @@ interface ExtractedData {
   lawyers: { name: string; oab: string; role: string }[];
   partner_law_firm: string;
   summary: string;
-  phone_petition: string;
+  phone_found: string;
   phone_contract: string;
 }
 
@@ -47,7 +47,6 @@ export default function NewCase() {
 
   const [phone, setPhone] = useState("");
   const [phoneContract, setPhoneContract] = useState("");
-  const [phonePetition, setPhonePetition] = useState("");
   const [contractType, setContractType] = useState("omni");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [contractFile, setContractFile] = useState<File | null>(null);
@@ -120,8 +119,6 @@ export default function NewCase() {
 
       setExtracted(ext);
 
-      console.log("Dados extraídos pela IA:", ext);
-
       // Pre-fill fields
       setClientName(ext.client_name || "");
       setClientCpf(ext.client_cpf || "");
@@ -132,28 +129,27 @@ export default function NewCase() {
       setProcessNumber(ext.process_number || "");
       setDistributionDate(ext.distribution_date || "");
       setPartnerFirm(ext.partner_law_firm || "");
-
-      // Format case_value from AI
+      // Format case_value from AI (comes as "50000.00" string)
       if (ext.case_value) {
         const numVal = parseFloat(String(ext.case_value).replace(/[^\d.]/g, ""));
         if (!isNaN(numVal)) {
           setCaseValue(numVal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+        } else {
+          setCaseValue("");
         }
+      } else {
+        setCaseValue("");
       }
-
-      // Pick lawyers
+      // Pick the first lawyer as partner
       if (ext.lawyers?.length > 0) {
         setPartnerLawyer(ext.lawyers.map((l) => `${l.name} (${l.oab})`).join(", "));
       }
-
-      // Pre-fill phones
-      if (ext.phone_petition) {
-        console.log("Telefone da petição identificado:", ext.phone_petition);
-        setPhonePetition(formatPhone(ext.phone_petition));
+      // If phone was found in PDF and none was provided
+      if (ext.phone_found && !phone) {
+        setPhone(formatPhone(ext.phone_found));
       }
-
+      // If phone was found in Contract
       if (ext.phone_contract) {
-        console.log("Telefone do contrato identificado:", ext.phone_contract);
         setPhoneContract(formatPhone(ext.phone_contract));
       }
 
@@ -202,7 +198,6 @@ export default function NewCase() {
           cpf_or_identifier: clientCpf || null,
           phone: phoneDigits,
           phone_contract: phoneContract.replace(/\D/g, "") || null,
-          phone_petition: phonePetition.replace(/\D/g, "") || null,
           user_id: user.id,
         } as any)
         .select()
@@ -421,17 +416,17 @@ export default function NewCase() {
                   </p>
                 </div>
 
-                <div className={`rounded-lg p-3 space-y-1 ${!phonePetition.trim() && !phoneContract.trim() ? 'border-2 border-destructive/60 bg-destructive/5' : 'border border-border bg-secondary/30'}`}>
-                  <Label className={`text-[10px] flex items-center gap-1.5 font-semibold ${!phonePetition.trim() ? 'text-destructive' : 'text-muted-foreground'} uppercase`}>
-                    <Phone className="w-3 h-3" /> Telefone Petição
+                <div className={`rounded-lg p-3 space-y-1 ${!phone.trim() && !phoneContract.trim() ? 'border-2 border-destructive/60 bg-destructive/5' : 'border border-border bg-secondary/30'}`}>
+                  <Label className={`text-[10px] flex items-center gap-1.5 font-semibold ${!phone.trim() ? 'text-destructive' : 'text-muted-foreground'} uppercase`}>
+                    <Phone className="w-3 h-3" /> Telefone Consulta
                   </Label>
                   <p className="text-sm font-medium px-1">
-                    {formatPhone(phonePetition) || <span className="text-muted-foreground italic font-normal">Não encontrado</span>}
+                    {formatPhone(phone) || <span className="text-muted-foreground italic font-normal">Não encontrado</span>}
                   </p>
                 </div>
               </div>
             </div>
-            {!phonePetition.trim() && !phoneContract.trim() && (
+            {!phone.trim() && !phoneContract.trim() && (
               <p className="text-[10px] text-destructive font-medium flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" /> Nenhum telefone registrado — não será possível iniciar conversa.
               </p>
