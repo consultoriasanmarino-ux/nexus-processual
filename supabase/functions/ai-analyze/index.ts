@@ -23,35 +23,36 @@ serve(async (req) => {
 
     const isOmni = contractType === "omni";
 
-    const systemPrompt = `Você é um robô de extração de dados jurídicos.
+    const systemPrompt = `Você é um assistente jurídico especializado em análise de documentos brasileiros de financiamento e petições iniciais.
+    
+TAREFA: Extraia dados estruturados combinando as informações da PETIÇÃO e do CONTRATO judicial.
 
-REGRAS GERAIS:
-- Extraia Nome, CPF, Réu, Processo e Valor.
-- Todo fone do cliente encontrado DEVE ir para "phone_contract". 
-- EM CONTRATOS CCB/OMNI: O telefone aparece frequentemente como "Celular:" logo abaixo do e-mail/CEP. Ex: "Celular: (53) 999493280". CAPTURE-O OBRIGATORIAMENTE.
+DIRETRIZES DE EXTRAÇÃO DE TELEFONE (CRÍTICO):
+- O campo "phone_contract" é o seu objetivo principal. Ele deve conter o telefone de contato direto do CLIENTE.
+- ONDE BUSCAR NO CONTRATO (CCB): Procure no bloco de "Dados do Emitente/Devedor". Em contratos OMNI, o telefone aparece frequentemente como "Celular:" logo abaixo do e-mail. Extraia o DDD e o número (ex: 53999493280).
+- ONDE BUSCAR NA PETIÇÃO: Procure na seção de "QUALIFICAÇÃO DO AUTOR" (início da petição, onde consta o Nome, CPF e Endereço). O telefone geralmente está logo após o endereço ou e-mail do autor.
+- CUIDADO COM ADVOGADOS: Ignore telefones próximos a números de OAB ou carimbos de advogados.
+- MAPEAMENTO: Qualquer telefone do cliente encontrado deve ir para "phone_contract".
 
-REGRAS DO RESUMO (EQUILÍBRIO):
-1. O campo "summary" deve ser um RESUMO EXECUTIVO de 2 a 3 frases concisas.
-2. Deve ser COMPLETO (não corte informações no meio), mas sem enrolação.
-3. FOCO: Identificar o Autor, o Réu, o objetivo da ação e o motivo principal (ex: negativação indevida ou revisão de juros).
-4. EVITE: Citações de leis, jurisprudência, longas listas de números de contrato ou listas exaustivas de valores e datas.
+RESUMO EXECUTIVO (CRÍTICO):
+- O campo "summary" deve ser um resumo de 2 a 3 frases concisas.
+- Deve ser COMPLETO: cite o Autor, o Réu (Banco), o motivo da ação (ex: revisional) e o veículo envolvido se houver.
+- Sem detalhes técnicos excessivos (CPFs, números longos de contrato ou jurisprudência).
 
-Exemplo: "O autor Anderson Silva propõe ação contra o Banco OMNI buscando a declaração de indébito de valores não contratados. Alega que sofreu negativação indevida e requer danos morais. O caso envolve contratos de financiamento de 2015."
-
-JSON OBRIGATÓRIO:
+Responda APENAS com JSON válido:
 {
-  "client_name": "NOME",
-  "client_cpf": "CPF",
-  "defendant": "REU",
-  "case_type": "TIPO",
-  "court": "VARA",
-  "process_number": "PROCESSO",
+  "client_name": "Nome Completo do Autor",
+  "client_cpf": "CPF do autor (apenas dígitos)",
+  "defendant": "Nome do Réu (geralmente o banco)",
+  "case_type": "Tipo da ação",
+  "court": "Vara e Comarca",
+  "process_number": "Número do processo",
   "distribution_date": "YYYY-MM-DD",
-  "case_value": 0.00,
-  "lawyers": [{"name": "...", "oab": "...", "role": "..."}],
-  "partner_law_firm": "FIRM",
-  "phone_contract": "DIGITOS",
-  "summary": "RESUMO_UMA_FRASE_MAX_150_CARACTERES"
+  "case_value": 123.45,
+  "lawyers": [{"name": "...", "oab": "...", "role": "advogado do autor"}],
+  "partner_law_firm": "Escritório",
+  "phone_contract": "Telefone do Autor (apenas dígitos)",
+  "summary": "Resumo conciso e informativo de 2-3 frases."
 }`;
 
     // Truncate texts to avoid token limits
