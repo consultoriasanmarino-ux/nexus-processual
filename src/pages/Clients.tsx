@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Search, User, Phone, Mail, Trash2, Trash, Download, Upload, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import type { Client } from "@/lib/types";
+import { formatPhone, formatCPF } from "@/lib/utils";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -260,10 +261,10 @@ export default function Clients() {
                   <div className="flex flex-wrap gap-3 mt-1">
                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Phone className="w-3 h-3" />
-                      {c.phone_contract || c.phone || "Sem telefone"}
+                      {formatPhone(c.phone_contract || c.phone) || "Sem telefone"}
                     </span>
                     {c.email && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Mail className="w-3 h-3" />{c.email}</span>}
-                    {c.cpf_or_identifier && <span className="text-xs text-muted-foreground font-mono">CPF: {c.cpf_or_identifier}</span>}
+                    {c.cpf_or_identifier && <span className="text-xs text-muted-foreground font-mono">CPF: {formatCPF(c.cpf_or_identifier)}</span>}
                   </div>
                 </Link>
                 <Link to={`/client/${c.id}`} className="text-muted-foreground hover:text-primary transition-colors flex-shrink-0">

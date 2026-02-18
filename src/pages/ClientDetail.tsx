@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { getStatusInfo } from "@/lib/types";
 import type { Client, Case } from "@/lib/types";
+import { formatPhone, formatCPF, formatCurrency } from "@/lib/utils";
 
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>();
@@ -52,9 +53,9 @@ export default function ClientDetail() {
   }
 
   const infoItems = [
-    { icon: FileText, label: "CPF", value: client.cpf_or_identifier },
-    { icon: Phone, label: "Telefone Consulta", value: client.phone },
-    { icon: Phone, label: "Telefone do Contrato", value: client.phone_contract },
+    { icon: FileText, label: "CPF", value: formatCPF(client.cpf_or_identifier) },
+    { icon: Phone, label: "Telefone Consulta", value: formatPhone(client.phone) },
+    { icon: Phone, label: "Telefone do Contrato", value: formatPhone(client.phone_contract) },
     { icon: Mail, label: "E-mail", value: client.email },
     { icon: Calendar, label: "Nascimento", value: client.birth_date },
     { icon: DollarSign, label: "Renda", value: client.income },

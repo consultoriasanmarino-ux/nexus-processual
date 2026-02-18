@@ -12,6 +12,7 @@ import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { formatPhone, formatCPF } from "@/lib/utils";
 
 const DEFAULT_CONTEXT = `Somos uma empresa que acompanha o processo jurídico de alguns casos e notificamos o cliente quando ele tem algo para receber, no caso, quando as causas são favoráveis.
 
@@ -71,7 +72,7 @@ function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () =
         <span className="text-[10px] text-muted-foreground uppercase font-semibold">Telefone Consulta</span>
         {editingField === "phone" ? (
           <div className="flex items-center gap-1.5">
-            <Input value={phoneValue} onChange={(e) => setPhoneValue(e.target.value)} placeholder="(11) 99999-9999" className="h-7 w-40 text-xs bg-secondary border-border" />
+            <Input value={phoneValue} onChange={(e) => setPhoneValue(formatPhone(e.target.value))} placeholder="(11) 99999-9999" className="h-7 w-40 text-xs bg-secondary border-border" />
             <Button size="sm" variant="outline" onClick={handleSave} disabled={saving} className="h-7 text-xs px-2">
               {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
             </Button>
@@ -81,7 +82,7 @@ function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () =
           <div className="flex items-center gap-1.5 px-2 py-1">
             <Phone className="w-3 h-3 text-muted-foreground" />
             <span className={`text-xs ${!client.phone?.trim() ? 'text-muted-foreground/60 italic' : 'text-muted-foreground'}`}>
-              {client.phone || "Não informado"}
+              {formatPhone(client.phone) || "Não informado"}
             </span>
             <button onClick={() => startEditing("phone", client.phone)} className="text-muted-foreground hover:text-foreground transition-colors">
               <Pencil className="w-3 h-3" />
@@ -95,7 +96,7 @@ function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () =
         <span className="text-[10px] text-muted-foreground uppercase font-semibold">Telefone do Contrato</span>
         {editingField === "phone_contract" ? (
           <div className="flex items-center gap-1.5">
-            <Input value={phoneValue} onChange={(e) => setPhoneValue(e.target.value)} placeholder="(11) 99999-9999" className="h-7 w-40 text-xs bg-secondary border-border" />
+            <Input value={phoneValue} onChange={(e) => setPhoneValue(formatPhone(e.target.value))} placeholder="(11) 99999-9999" className="h-7 w-40 text-xs bg-secondary border-border" />
             <Button size="sm" variant="outline" onClick={handleSave} disabled={saving} className="h-7 text-xs px-2">
               {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
             </Button>
@@ -113,7 +114,7 @@ function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () =
               !client.phone_contract?.trim() && !client.phone?.trim() ? "text-destructive font-medium" :
                 !client.phone_contract?.trim() ? "text-muted-foreground italic" : "text-foreground font-semibold"
             )}>
-              {client.phone_contract || "Não extraído"}
+              {formatPhone(client.phone_contract) || "Não extraído"}
             </span>
             <button onClick={() => startEditing("phone_contract", client.phone_contract)} className="text-muted-foreground hover:text-foreground transition-colors">
               <Pencil className="w-3 h-3" />
@@ -269,7 +270,7 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
             <div className="space-y-2">
               <p className="text-sm font-medium">{client.full_name}</p>
               <ClientPhoneEditor client={client} onRefresh={onRefresh} />
-              {client.cpf_or_identifier && <p className="text-xs text-muted-foreground">CPF: {client.cpf_or_identifier}</p>}
+              {client.cpf_or_identifier && <p className="text-xs text-muted-foreground">CPF: {formatCPF(client.cpf_or_identifier)}</p>}
             </div>
           )}
         </div>

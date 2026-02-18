@@ -21,12 +21,7 @@ function formatCurrency(value: string): string {
   return num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function formatPhone(value: string): string {
-  const digits = value.replace(/\D/g, "");
-  if (digits.length <= 2) return digits.length ? `(${digits}` : "";
-  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
-}
+import { formatPhone, formatCPF } from "@/lib/utils";
 
 interface ExtractedData {
   client_name: string;
@@ -407,7 +402,7 @@ export default function NewCase() {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">CPF</Label>
-                  <Input value={clientCpf} onChange={(e) => setClientCpf(e.target.value)} className="bg-secondary border-border" />
+                  <Input value={formatCPF(clientCpf)} onChange={(e) => setClientCpf(e.target.value)} className="bg-secondary border-border" />
                 </div>
               </div>
 
@@ -417,7 +412,7 @@ export default function NewCase() {
                     <Phone className="w-3 h-3" /> Telefone do Contrato
                   </Label>
                   <p className="text-sm font-medium px-1">
-                    {phoneContract || <span className="text-muted-foreground italic font-normal">Não encontrado</span>}
+                    {formatPhone(phoneContract) || <span className="text-muted-foreground italic font-normal">Não encontrado</span>}
                   </p>
                 </div>
 
@@ -426,78 +421,78 @@ export default function NewCase() {
                     <Phone className="w-3 h-3" /> Telefone Consulta
                   </Label>
                   <p className="text-sm font-medium px-1">
-                    {phone || <span className="text-muted-foreground italic font-normal">Não encontrado</span>}
+                    {formatPhone(phone) || <span className="text-muted-foreground italic font-normal">Não encontrado</span>}
                   </p>
                 </div>
               </div>
-              {!phone.trim() && !phoneContract.trim() && (
-                <p className="text-[10px] text-destructive font-medium flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3" /> Nenhum telefone registrado — não será possível iniciar conversa.
-                </p>
-              )}
+            </div>
+            {!phone.trim() && !phoneContract.trim() && (
+              <p className="text-[10px] text-destructive font-medium flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> Nenhum telefone registrado — não será possível iniciar conversa.
+              </p>
+            )}
 
-              <hr className="border-border" />
+            <hr className="border-border" />
 
-              <h3 className="text-sm font-semibold">Dados do Processo</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2 sm:col-span-2">
-                  <Label className="text-xs text-muted-foreground">Título do caso</Label>
-                  <Input value={caseTitle} onChange={(e) => setCaseTitle(e.target.value)} className="bg-secondary border-border" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Réu</Label>
-                  <Input value={defendant} onChange={(e) => setDefendant(e.target.value)} className="bg-secondary border-border" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Tipo de ação</Label>
-                  <Input value={caseType} onChange={(e) => setCaseType(e.target.value)} className="bg-secondary border-border" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Tribunal / Vara</Label>
-                  <Input value={court} onChange={(e) => setCourt(e.target.value)} className="bg-secondary border-border" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Nº do processo</Label>
-                  <Input value={processNumber} onChange={(e) => setProcessNumber(e.target.value)} className="bg-secondary border-border" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Data de distribuição</Label>
-                  <Input type="date" value={distributionDate} onChange={(e) => setDistributionDate(e.target.value)} className="bg-secondary border-border" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Valor da causa (R$)</Label>
-                  <div className="flex items-center gap-3">
-                    <Input
-                      value={isDanosMorais ? "10.000,00" : caseValue}
-                      onChange={(e) => setCaseValue(formatCurrency(e.target.value))}
-                      placeholder="0,00"
-                      disabled={isDanosMorais}
-                      className="bg-secondary border-border flex-1"
-                    />
-                    <label className="flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
-                      <Checkbox checked={isDanosMorais} onCheckedChange={(checked) => {
-                        setIsDanosMorais(!!checked);
-                        if (checked) setCaseValue("10.000,00");
-                      }} />
-                      <span className="text-xs text-muted-foreground">Danos Morais</span>
-                    </label>
-                  </div>
+            <h3 className="text-sm font-semibold">Dados do Processo</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2 sm:col-span-2">
+                <Label className="text-xs text-muted-foreground">Título do caso</Label>
+                <Input value={caseTitle} onChange={(e) => setCaseTitle(e.target.value)} className="bg-secondary border-border" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Réu</Label>
+                <Input value={defendant} onChange={(e) => setDefendant(e.target.value)} className="bg-secondary border-border" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Tipo de ação</Label>
+                <Input value={caseType} onChange={(e) => setCaseType(e.target.value)} className="bg-secondary border-border" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Tribunal / Vara</Label>
+                <Input value={court} onChange={(e) => setCourt(e.target.value)} className="bg-secondary border-border" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Nº do processo</Label>
+                <Input value={processNumber} onChange={(e) => setProcessNumber(e.target.value)} className="bg-secondary border-border" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Data de distribuição</Label>
+                <Input type="date" value={distributionDate} onChange={(e) => setDistributionDate(e.target.value)} className="bg-secondary border-border" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Valor da causa (R$)</Label>
+                <div className="flex items-center gap-3">
+                  <Input
+                    value={isDanosMorais ? "10.000,00" : caseValue}
+                    onChange={(e) => setCaseValue(formatCurrency(e.target.value))}
+                    placeholder="0,00"
+                    disabled={isDanosMorais}
+                    className="bg-secondary border-border flex-1"
+                  />
+                  <label className="flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
+                    <Checkbox checked={isDanosMorais} onCheckedChange={(checked) => {
+                      setIsDanosMorais(!!checked);
+                      if (checked) setCaseValue("10.000,00");
+                    }} />
+                    <span className="text-xs text-muted-foreground">Danos Morais</span>
+                  </label>
                 </div>
               </div>
+            </div>
 
-              <div className="flex items-center justify-between pt-4 gap-4">
-                <Button variant="outline" onClick={() => { setExtracted(null); setPdfFile(null); }}>
-                  <ArrowLeft className="w-4 h-4 mr-2" /> Voltar
-                </Button>
-                <Button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="bg-gradient-gold text-primary-foreground hover:opacity-90 font-semibold"
-                >
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-                  Criar Caso
-                </Button>
-              </div>
+            <div className="flex items-center justify-between pt-4 gap-4">
+              <Button variant="outline" onClick={() => { setExtracted(null); setPdfFile(null); }}>
+                <ArrowLeft className="w-4 h-4 mr-2" /> Voltar
+              </Button>
+              <Button
+                onClick={handleSave}
+                disabled={saving}
+                className="bg-gradient-gold text-primary-foreground hover:opacity-90 font-semibold"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
+                Criar Caso
+              </Button>
             </div>
           </div>
         )}
