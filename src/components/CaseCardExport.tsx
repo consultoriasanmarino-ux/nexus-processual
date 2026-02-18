@@ -22,14 +22,35 @@ function toTitleCase(str: string) {
 function simplifyDefendant(name: string) {
   let simplified = name.replace(/[,\s]+(financiamento|crédito|credito|investimento|seguros|previdência|previdencia|participações|participacoes|administradora|corretora|distribuidora)\b.*/i, "");
   simplified = simplified.replace(/\s*(s\.?\/?a\.?|ltda\.?|me|epp|eireli)\.?\s*$/i, "").trim();
+  // Remove traços ou pontos no final do nome
+  simplified = simplified.replace(/[\-\.\s]+$/, "").trim();
   return simplified || name;
 }
 
 function simplifyCourtToComarca(court: string) {
-  const comarcaMatch = court.match(/comarca\s+de\s+(.+)/i);
+  if (!court) return "";
+
+  // Se for Núcleo de Justiça 4.0, geralmente é muito longo. Extraímos apenas o Estado se houver.
+  if (court.toLowerCase().includes("núcleo") || court.toLowerCase().includes("nucleo")) {
+    const stateMatch = court.match(/-\s*([A-Z]{2})\s*$/i);
+    if (stateMatch) return stateMatch[1].toUpperCase();
+    return "Justiça 4.0";
+  }
+
+  // Tenta extrair a cidade de "Comarca de Cidade" ou "Foro de Cidade"
+  const comarcaMatch = court.match(/comarca\s+de\s+([^-]+)/i);
   if (comarcaMatch) return comarcaMatch[1].trim();
-  const foroMatch = court.match(/foro\s+(?:de\s+|central\s+)?(.+)/i);
+
+  const foroMatch = court.match(/foro\s+(?:de\s+|central\s+)?([^-]+)/i);
   if (foroMatch) return foroMatch[1].trim();
+
+  // Se tiver um hífen e o nome for longo, tenta pegar o que está depois dele (geralmente cidade/estado)
+  if (court.length > 30 && court.includes("-")) {
+    const parts = court.split("-");
+    const lastPart = parts[parts.length - 1].trim();
+    if (lastPart.length <= 15) return lastPart;
+  }
+
   return court;
 }
 
@@ -40,8 +61,11 @@ function buildInitialMessage(caseData: Case): string {
   const defendantName = caseData.defendant ? toTitleCase(simplifyDefendant(caseData.defendant)) : "a parte ré";
   const courtDisplay = caseData.court
     ? toTitleCase(simplifyCourtToComarca(caseData.court)).replace(/\b(rs|sp|rj|mg|pr|sc|ba|go|df|es|pe|ce|ma|pa|mt|ms|am|pi|rn|pb|se|al|to|ro|ac|ap|rr)\b/gi, (s) => s.toUpperCase())
-    : "comarca não informada";
-  return `Olá, ${firstName}! Tenho novidades sobre sua ação de revisão contra o ${defendantName} (Comarca de ${courtDisplay}). Poderia confirmar se recebeu esta mensagem?`;
+    : "Não informada";
+
+  const courtText = courtDisplay !== "Não informada" ? ` (Comarca: ${courtDisplay})` : "";
+
+  return `Olá, ${firstName}! Tenho novidades sobre sua ação de revisão contra o ${defendantName}${courtText}. Poderia confirmar se recebeu esta mensagem?`;
 }
 
 
