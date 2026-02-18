@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, Sparkles, Loader2, MessageSquare, User, Bot, Image as ImageIcon, X, Trash2, Info } from "lucide-react";
+import { Send, Sparkles, Loader2, MessageSquare, User, Bot, Image as ImageIcon, X, Trash2, Info, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import type { Case, Conversation, Message } from "@/lib/types";
 import { formatPhone } from "@/lib/utils";
@@ -40,6 +40,13 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
 
   const addMessage = async (sender: string, text: string) => {
     if (!user || !conversationId) return;
+
+    // Marcamos como ativo ao interagir
+    await supabase
+      .from("cases")
+      .update({ is_chat_active: true } as any)
+      .eq("id", caseId);
+
     await supabase.from("messages").insert({
       conversation_id: conversationId,
       user_id: user.id,
@@ -47,6 +54,20 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
       message_text: text,
     });
     onRefresh();
+  };
+
+  const handleFinishConversation = async () => {
+    try {
+      await supabase
+        .from("cases")
+        .update({ is_chat_active: false } as any)
+        .eq("id", caseId);
+
+      toast.success("Atendimento finalizado com sucesso!");
+      onRefresh();
+    } catch (err) {
+      toast.error("Erro ao finalizar atendimento.");
+    }
   };
 
   const handleImagePaste = (e: React.ClipboardEvent) => {
@@ -148,12 +169,26 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
       {/* Initial message helper */}
       <div className="bg-card border border-primary/20 rounded-xl p-3 flex items-center justify-between gap-4">
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] text-primary font-bold uppercase tracking-wider mb-1">Sugestão Inicial</p>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-[10px] text-primary font-bold uppercase tracking-wider">Sugestão Inicial</p>
+            {caseData.is_chat_active && (
+              <span className="flex items-center gap-1 text-[9px] bg-success/10 text-success px-1.5 py-0.5 rounded-full border border-success/20 animate-pulse">
+                <div className="w-1 h-1 rounded-full bg-success" /> Em Atendimento
+              </span>
+            )}
+          </div>
           <p className="text-sm truncate opacity-60 italic">{initialMessage}</p>
         </div>
-        <Button size="sm" variant="outline" className="h-8 text-xs font-semibold" onClick={() => { navigator.clipboard.writeText(initialMessage); toast.success("Copiada!"); }}>
-          Copiar
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="h-8 text-[10px] font-bold uppercase tracking-wider" onClick={() => { navigator.clipboard.writeText(initialMessage); toast.success("Copiada!"); }}>
+            Copiar
+          </Button>
+          {caseData.is_chat_active && (
+            <Button size="sm" onClick={handleFinishConversation} className="h-8 bg-success hover:bg-success/90 text-white text-[10px] font-bold uppercase tracking-wider">
+              <CheckCircle2 className="w-3 h-3 mr-1" /> Finalizar
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Chat History Area */}

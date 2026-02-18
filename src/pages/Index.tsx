@@ -139,6 +139,13 @@ export default function Index() {
                       </span>
                     </div>
 
+                    {c.is_chat_active && (
+                      <div className="absolute top-12 right-4 flex items-center gap-1.5 px-2 py-1 bg-success/10 rounded-lg animate-pulse border border-success/20 shadow-glow-success">
+                        <div className="w-1.5 h-1.5 rounded-full bg-success shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
+                        <span className="text-[10px] font-bold text-success uppercase tracking-wider">Atendendo</span>
+                      </div>
+                    )}
+
                     {client && (
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
                         <User className="w-3 h-3" />

@@ -31,6 +31,7 @@ export interface Case {
   case_summary: string | null;
   case_value: number | null;
   status: string;
+  is_chat_active: boolean;
   created_at: string;
   clients?: Client;
 }
