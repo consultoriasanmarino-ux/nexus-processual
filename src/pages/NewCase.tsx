@@ -73,14 +73,15 @@ export default function NewCase() {
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     let fullText = "";
 
-    for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
+    for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
 
       // Sort items by vertical position then horizontal
       const items = content.items as any[];
       items.sort((a, b) => {
-        if (Math.abs(a.transform[5] - b.transform[5]) > 5) {
+        // Reduced tolerance to 3 for better line detection
+        if (Math.abs(a.transform[5] - b.transform[5]) > 3) {
           return b.transform[5] - a.transform[5]; // Top to bottom
         }
         return a.transform[4] - b.transform[4]; // Left to right
@@ -90,6 +91,7 @@ export default function NewCase() {
       fullText += pageText + "\n\n";
     }
 
+    console.log(`Texto extraído de ${file.name}:`, fullText.substring(0, 500) + "...");
     return fullText;
   };
 

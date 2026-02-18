@@ -23,37 +23,36 @@ serve(async (req) => {
 
     const isOmni = contractType === "omni";
 
-    const systemPrompt = `Você é um assistente jurídico especializado em análise de documentos brasileiros de financiamento (CCB) e petições iniciais.
-    
-TAREFA: Extraia dados estruturados combinando as informações da PETIÇÃO e do CONTRATO judicial.
+    const systemPrompt = `Você é um especialista em análise de contratos de financiamento de veículos (CCB) e petições judiciais.
+Sua tarefa é extrair os dados do cliente e do processo para um sistema de gestão.
 
-DIRETRIZES DE EXTRAÇÃO DE TELEFONE (ALTA PRIORIDADE):
-- O campo "phone_contract" é o seu objetivo principal. Ele deve conter o telefone de contato direto do CLIENTE.
-- BUSCA EXAUSTIVA: Procure por rótulos como "Celular:", "Fone:", "Telefone:", "Tel:", "WhatsApp:", "Contato:".
-- NO CONTRATO (CCB): Geralmente está no bloco de identificação do emitente/devedor, logo abaixo ou ao lado do e-mail e endereço.
-- NA PETIÇÃO: Geralmente está no parágrafo de qualificação do autor no início do documento.
-- MAPEAMENTO: Qualquer telefone do cliente encontrado nos documentos DEVE ser retornado no campo "phone_contract".
-- CUIDADO: Ignore telefones claramente associados apenas a advogados (perto de OAB).
+REGRAS DE OURO PARA TELEFONE (CRÍTICO):
+1. O telefone do cliente é a informação mais importante.
+2. NO CONTRATO OMNI: Procure o bloco "Dados do Emitente". O telefone está quase sempre no campo "Celular:", posicionado logo abaixo ou ao lado do e-mail. 
+   Exemplo Real: "E-mail: fulano@gmail.com Celular: (53) 99999-9999".
+3. NA PETIÇÃO: Procure na "Qualificação do Autor" no início do texto.
+4. MAPEAMENTO: Salve qualquer telefone encontrado do cliente no campo "phone_contract". 
+5. FORMATO: Apenas dígitos.
 
-RESUMO EXECUTIVO:
-- Resumo de 2 a 3 frases concisas.
-- Deve identificar Autor, Réu, objetivo da ação e motivo principal.
-- Evite detalhes técnicos desnecessários como CPFs e jurisprudência.
+RESUMO DO CASO:
+- Escreva um resumo completo mas curto (2 a 3 frases).
+- Deve dizer quem é o autor, contra qual banco é a ação e qual o motivo (ex: revisão de contrato ou negativação indevida).
+- PROIBIDO: Listar CPFs, RGs ou jurisprudências longas.
 
-Responda APENAS com JSON válido:
+Responda APENAS com JSON:
 {
-  "client_name": "Nome",
-  "client_cpf": "CPF",
-  "defendant": "Réu",
-  "case_type": "Ação",
-  "court": "Vara",
-  "process_number": "Processo",
+  "client_name": "NOME COMPLETO",
+  "client_cpf": "CPF_SO_DIGITOS",
+  "defendant": "BANCO_REU",
+  "case_type": "TIPO_DA_ACAO",
+  "court": "VARA_E_COMARCA",
+  "process_number": "NUMERO_PROCESSO",
   "distribution_date": "YYYY-MM-DD",
   "case_value": 0.00,
   "lawyers": [{"name": "...", "oab": "...", "role": "..."}],
-  "partner_law_firm": "Escritório",
-  "phone_contract": "Apenas dígitos do telefone encontrado",
-  "summary": "Resumo equilibrado"
+  "partner_law_firm": "ESCRITORIO",
+  "phone_contract": "DIGITOS_DO_CELULAR",
+  "summary": "RESUMO_2_OU_3_FRASES"
 }`;
 
     // Truncate texts to avoid token limits
