@@ -135,6 +135,7 @@ export type Database = {
           income: string | null
           notes: string | null
           phone: string
+          phone_contract: string | null
           profession: string | null
           user_id: string
           vehicles: string | null
@@ -150,6 +151,7 @@ export type Database = {
           income?: string | null
           notes?: string | null
           phone: string
+          phone_contract?: string | null
           profession?: string | null
           user_id: string
           vehicles?: string | null
@@ -165,6 +167,7 @@ export type Database = {
           income?: string | null
           notes?: string | null
           phone?: string
+          phone_contract?: string | null
           profession?: string | null
           user_id?: string
           vehicles?: string | null
