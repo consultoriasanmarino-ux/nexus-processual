@@ -23,37 +23,35 @@ serve(async (req) => {
 
     const isOmni = contractType === "omni";
 
-    const systemPrompt = `Você é um assistente jurídico especializado em análise de documentos brasileiros de financiamento e petições iniciais.
+    const systemPrompt = `Você é um robô de extração de dados jurídicos.
 
-TAREFA: Extraia dados estruturados combinando as informações da PETIÇÃO e do CONTRATO.
+REGRAS GERAIS:
+- Extraia Nome, CPF, Réu, Processo e Valor.
+- Todo fone do cliente encontrado DEVE ir para "phone_contract".
 
-REGRA DE TELEFONE (CRÍTICO):
-- O campo "phone_contract" DEVE conter o telefone principal do CLIENTE (extraído da petição ou contrato).
-- IGNORE o campo "phone_found". Coloque tudo em "phone_contract".
-- CUIDADO: Descarte telefones de advogados (perto de OAB).
+REGRAS DO RESUMO (TOLERÂNCIA ZERO):
+1. O campo "summary" deve ter no MÁXIMO 150 CARACTERES.
+2. Deve ser apenas UMA ÚNICA FRASE curta.
+3. PROIBIDO: Números de contrato, datas, valores, jurisprudência ou narrativa de fatos.
+4. OBRIGATÓRIO: Apenas o tipo da ação e contra quem.
+5. ERRO FATAL: Se o resumo tiver mais de 150 caracteres, a extração falhará.
 
-RESUMO ESSENCIAL (MÁXIMA PRIORIDADE):
-- O campo "summary" deve ter NO MÁXIMO 150 CARACTERES.
-- DEVE ser apenas uma frase curta e direta.
-- PROIBIDO: Datas, números de contrato, CPFs, RGs, jurisprudência ou valores exatos.
-- FOCO: Quem contra Quem e Qual o motivo básico.
+Exemplo de resumo: "Ação Revisional de Juros contra o Banco OMNI devido a taxas abusivas."
 
-Exemplo: "O autor requer a baixa de negativação indevida e reparação por danos morais contra o Banco OMNI."
-
-Responda APENAS com JSON válido:
+JSON OBRIGATÓRIO:
 {
   "client_name": "NOME",
-  "client_cpf": "CPF_DIGITOS",
+  "client_cpf": "CPF",
   "defendant": "REU",
-  "case_type": "TIPO_ACAO",
-  "court": "VARA/COMARCA",
+  "case_type": "TIPO",
+  "court": "VARA",
   "process_number": "PROCESSO",
   "distribution_date": "YYYY-MM-DD",
   "case_value": 0.00,
   "lawyers": [{"name": "...", "oab": "...", "role": "..."}],
   "partner_law_firm": "FIRM",
-  "phone_contract": "DIGITOS_FONE_CLIENTE",
-  "summary": "RESUMO_ULTRA_CURTO"
+  "phone_contract": "DIGITOS",
+  "summary": "RESUMO_UMA_FRASE_MAX_150_CARACTERES"
 }`;
 
     // Truncate texts to avoid token limits

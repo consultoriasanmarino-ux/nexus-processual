@@ -117,6 +117,11 @@ export default function NewCase() {
       const ext = data?.extracted as ExtractedData;
       if (!ext) throw new Error("Resposta inesperada da IA.");
 
+      // Safety net: Truncate summary if it's too long
+      if (ext.summary && ext.summary.length > 160) {
+        ext.summary = ext.summary.substring(0, 160) + "...";
+      }
+
       setExtracted(ext);
 
       // Pre-fill fields
