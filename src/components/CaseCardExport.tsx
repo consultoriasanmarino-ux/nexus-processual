@@ -8,6 +8,7 @@ import {
 import { Download, FileText, FileDown, Stamp } from "lucide-react";
 import { toast } from "sonner";
 import type { Case, Client } from "@/lib/types";
+import { supabase } from "@/integrations/supabase/client";
 import jsPDF from "jspdf";
 import { formatPhone, formatCPF } from "@/lib/utils";
 
@@ -593,6 +594,52 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
+export async function exportPetition(caseData: Case) {
+  const client = (caseData as any).clients;
+  const clientName = client?.full_name || "peticao";
+
+  try {
+    const { data: doc, error: docErr } = await supabase
+      .from("documents")
+      .select("file_url")
+      .eq("case_id", caseData.id)
+      .eq("doc_type", "petição inicial")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (docErr || !doc?.file_url) {
+      toast.error("Petição não encontrada para este caso.");
+      return;
+    }
+
+    const { data: signedData, error: urlErr } = await supabase.storage
+      .from("documents")
+      .createSignedUrl(doc.file_url, 60);
+
+    if (urlErr || !signedData?.signedUrl) {
+      toast.error("Erro ao gerar link de download.");
+      return;
+    }
+
+    const response = await fetch(signedData.signedUrl);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${clientName.toUpperCase()}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+
+    toast.success("Petição baixada com sucesso!");
+  } catch (err) {
+    console.error("Error downloading petition:", err);
+    toast.error("Erro ao baixar petição.");
+  }
+}
+
 export function CaseCardExport({ caseData }: Props) {
   return (
     <>
@@ -613,6 +660,9 @@ export function CaseCardExport({ caseData }: Props) {
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => exportAsOficio(caseData)}>
             <Stamp className="w-3.5 h-3.5 mr-2" /> Exportar Ofício
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => exportPetition(caseData)}>
+            <Download className="w-3.5 h-3.5 mr-2" /> Baixar Petição PDF
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => exportAsTxt(caseData)}>
             <FileText className="w-3.5 h-3.5 mr-2" /> Exportar .txt

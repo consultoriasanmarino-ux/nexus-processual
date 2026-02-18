@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Download, Copy, Check, FileDown } from "lucide-react";
+import { Download, Copy, Check, FileDown, Stamp, FileText as FileTextIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { Case } from "@/lib/types";
 import { formatPhone, formatCPF } from "@/lib/utils";
+import { exportAsPdf, exportAsOficio, exportPetition } from "./CaseCardExport";
 
 interface Props {
   caseData: Case;
@@ -85,13 +86,22 @@ export function CaseExportModal({ caseData }: Props) {
         <DialogHeader>
           <DialogTitle className="text-base">Exportar Conteúdo do Caso</DialogTitle>
         </DialogHeader>
-        <div className="flex gap-2 mb-3">
+        <div className="flex flex-wrap gap-2 mb-4">
           <Button size="sm" variant="outline" onClick={handleCopy} className="text-xs">
             {copied ? <Check className="w-3.5 h-3.5 mr-1.5 text-primary" /> : <Copy className="w-3.5 h-3.5 mr-1.5" />}
-            {copied ? "Copiado!" : "Copiar tudo"}
+            {copied ? "Copiado!" : "Copiar Texto"}
           </Button>
           <Button size="sm" variant="outline" onClick={handleDownload} className="text-xs">
-            <Download className="w-3.5 h-3.5 mr-1.5" /> Baixar .txt
+            <FileTextIcon className="w-3.5 h-3.5 mr-1.5" /> Baixar .txt
+          </Button>
+          <Button size="sm" onClick={() => exportAsPdf(caseData)} className="bg-gradient-gold text-primary-foreground hover:opacity-90 text-xs shadow-glow">
+            <FileDown className="w-3.5 h-3.5 mr-1.5" /> Baixar Ficha (PDF)
+          </Button>
+          <Button size="sm" onClick={() => exportAsOficio(caseData)} className="bg-gradient-gold text-primary-foreground hover:opacity-90 text-xs shadow-glow">
+            <Stamp className="w-3.5 h-3.5 mr-1.5" /> Baixar Ofício
+          </Button>
+          <Button size="sm" onClick={() => exportPetition(caseData)} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs shadow-lg">
+            <Download className="w-3.5 h-3.5 mr-1.5" /> Baixar Petição
           </Button>
         </div>
         <pre className="flex-1 overflow-auto bg-secondary rounded-lg p-4 text-xs whitespace-pre-wrap font-mono text-foreground border border-border">
