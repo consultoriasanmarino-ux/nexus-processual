@@ -59,7 +59,7 @@ Responda APENAS com JSON válido:
   "partner_law_firm": "escritório de advocacia",
   "phone_found": "telefone encontrado na PETIÇÃO (apenas dígitos)",
   "phone_contract": "telefone encontrado no CONTRATO/CCB (apenas dígitos) - ESTE É O MAIS IMPORTANTE",
-  "summary": "resumo detalhado incluindo detalhes do financiamento se encontrados no contrato",
+  "summary": "resumo extremamente conciso em 2-3 frases em linguagem simples para leigos, focando apenas no objetivo da ação e no veículo/banco envolvido.",
   "valores_citados": [],
   "alertas_golpe": [],
   "perguntas_provaveis": []
