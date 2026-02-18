@@ -59,8 +59,8 @@ Responda APENAS com JSON válido:
     {"name": "...", "oab": "...", "role": "advogado do autor"}
   ],
   "partner_law_firm": "escritório de advocacia",
-  "phone_found": "telefone secundário (apenas dígitos)",
-  "phone_contract": "Telefone do Cliente/Contrato (apenas dígitos) - extraído da qualificação ou do CCB",
+  "phone_petition": "Telefone da Petição (apenas dígitos)",
+  "phone_contract": "Telefone do Cliente/Contrato (apenas dígitos) - extraído do CCB",
   "summary": "resumo extremamente conciso em 2-3 frases em linguagem simples para leigos, focando apenas no objetivo da ação e no veículo/banco envolvido.",
   "valores_citados": [],
   "alertas_golpe": [],

@@ -105,6 +105,13 @@ export default function CaseDetail() {
                     </div>
                   )}
 
+                  {client.phone_petition && (
+                    <div className="flex items-center gap-1.5 text-xs bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-md border border-amber-500/20">
+                      <span className="font-semibold uppercase text-[10px]">Petição:</span>
+                      <span>{formatPhone(client.phone_petition)}</span>
+                    </div>
+                  )}
+
                   {client.phone && (
                     <div className="flex items-center gap-1.5 text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-md border border-border">
                       <span className="font-semibold uppercase text-[10px]">Consulta:</span>
@@ -112,7 +119,7 @@ export default function CaseDetail() {
                     </div>
                   )}
 
-                  {!client.phone && !client.phone_contract && (
+                  {!client.phone && !client.phone_contract && !client.phone_petition && (
                     <div className="flex items-center gap-1.5 text-[10px] text-destructive font-medium bg-destructive/10 rounded-md px-2 py-0.5 border border-destructive/20">
                       Sem telefone registrado
                     </div>

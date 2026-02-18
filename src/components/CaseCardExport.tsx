@@ -52,6 +52,7 @@ interface ExportContent {
   cpf: string;
   phones: string;
   phoneContract: string;
+  phonePetition: string;
   birthDate: string;
   income: string;
   profession: string;
@@ -86,6 +87,7 @@ function buildExportContent(caseData: Case): ExportContent {
     cpf: client?.cpf_or_identifier ? formatCPF(client.cpf_or_identifier) : "Não informado",
     phones: client?.phone ? formatPhone(client.phone) : "Não informado",
     phoneContract: client?.phone_contract ? formatPhone(client.phone_contract) : "Não informado",
+    phonePetition: client?.phone_petition ? formatPhone(client.phone_petition) : "Não informado",
     birthDate: client?.birth_date || "Não informado",
     income: client?.income || "Não informado",
     profession: profession || "Não informado",
@@ -230,6 +232,7 @@ export function exportAsPdf(caseData: Case) {
   y += 16;
   addField("CPF:", c.cpf);
   if (c.phoneContract !== "Não informado") addField("Tel. Contrato:", c.phoneContract);
+  if (c.phonePetition !== "Não informado") addField("Tel. Petição:", c.phonePetition);
   if (c.phones !== "Não informado") addField("Tel. Consulta:", c.phones);
   addField("Nascimento:", c.birthDate);
   addField("Renda:", c.income);
@@ -543,6 +546,7 @@ export function exportAsTxt(caseData: Case) {
     `  Nome:        ${c.author}`,
     `  CPF:         ${c.cpf}`,
     `  Tel. Contrato: ${c.phoneContract}`,
+    `  Tel. Petição:  ${c.phonePetition}`,
     `  Tel. Consulta: ${c.phones}`,
     `  Nascimento:  ${c.birthDate}`,
     `  Renda:       ${c.income}`,

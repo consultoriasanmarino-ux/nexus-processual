@@ -158,7 +158,7 @@ export default function Index() {
                       <span>{new Date(c.created_at).toLocaleDateString("pt-BR")}</span>
                     </div>
 
-                    {client && !client.phone && !client.phone_contract && (
+                    {client && !client.phone && !client.phone_contract && !client.phone_petition && (
                       <div className="flex items-center gap-1.5 text-[10px] text-destructive font-medium mt-2 bg-destructive/10 rounded-md px-2 py-1">
                         <AlertTriangle className="w-3 h-3" />
                         <span>Sem telefone registrado</span>
