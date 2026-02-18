@@ -31,42 +31,31 @@ Você receberá dois textos:
 
 TAREFA: Extraia dados estruturados combinando as informações de ambos os documentos.
 
-DIRETRIZES DE EXTRAÇÃO DE TELEFONE (ALTA PRIORIDADE):
-- O campo "phone_petition" DEVE conter o telefone encontrado na qualificação do autor na Petição Inicial.
-- ONDE BUSCAR: Logo no início da petição, após o nome do Autor, CPF, endereço e e-mail. É comum aparecer como "telefone: (XX) XXXXX-XXXX".
-- REGRA DE OURO: Se o telefone estiver na mesma frase ou parágrafo dos dados pessoais do autor (Nome, CPF, Estado Civil), CAPTURE-O SEM HESITAR. 
-- ATENÇÃO: Muitas petições dizem "...telefone (XX) XXXX, por seu procurador...". Mesmo que a palavra "procurador" apareça depois, o telefone pertence ao AUTOR se estiver listado junto com o e-mail e endereço dele.
-- CUIDADO COM ADVOGADOS: Só ignore o número se ele estiver claramente associado a um carimbo de advogado, rodapé institucional ou logo após a menção à OAB.
+DIRETRIZES DE EXTRAÇÃO DE TELEFONE (ERRO ZERO):
+- O campo "phone_petition" é OBRIGATÓRIO se houver qualquer número de telefone na qualificação do autor.
+- EXEMPLO DE PADRÃO REAL: "ANDERSON SILVA..., residente em..., e-mail..., fone (54) 99606-3467, por seu procurador..."
+- NESTE EXEMPLO: O número (54) 99606-3467 PERTENCE AO AUTOR. 
+- REGRA ABSOLUTA: Ignorar a palavra "procurador" ou "advogado" se ela vier DEPOIS do telefone na mesma frase de qualificação. O telefone que vem ANTES de "por seu procurador" é SEMPRE do cliente.
+- FORMATO: Extraia apenas os dígitos. Se o número for "54996063467", salve exatamente assim.
 
 DADOS DO CONTRATO (CCB):
-- O campo "phone_contract" deve conter exclusivamente o telefone extraído do quadro de dados do EMITENTE no contrato/CCB.
+- O campo "phone_contract" deve vir do quadro de emitente do contrato (se enviado).
 
-DADOS ADICIONAIS:
-- O AUTOR/REQUERENTE (da petição) é o mesmo CLIENTE (do contrato).
-- O RÉU (da petição) é a INSTITUIÇÃO CREDORA (do contrato).
-- Extraia sempre o NOME COMPLETO e CPF do cliente.
-- "phone_found" pode conter outros números secundários achados na petição, mas o principal deve ir para "phone_contract".
-
-Responda APENAS com JSON válido:
+ESTRUTURA DE RESPOSTA (JSON):
 {
-  "client_name": "nome completo do autor",
-  "client_cpf": "CPF do autor",
-  "defendant": "nome do réu (geralmente o banco/financeira)",
-  "case_type": "tipo de ação (ex: Revisional de Veículo)",
-  "court": "tribunal e vara",
-  "process_number": "número do processo",
+  "client_name": "NOME DO AUTOR",
+  "client_cpf": "CPF DO AUTOR",
+  "defendant": "NOME DO RÉU",
+  "case_type": "TIPO DA AÇÃO",
+  "court": "VARA/COMARCA",
+  "process_number": "NÚMERO DO PROCESSO",
   "distribution_date": "YYYY-MM-DD",
   "case_value": 12345.67,
-  "lawyers": [
-    {"name": "...", "oab": "...", "role": "advogado do autor"}
-  ],
-  "partner_law_firm": "escritório de advocacia",
-  "phone_petition": "Telefone encontrado na qualificação da PETIÇÃO (apenas dígitos)",
-  "phone_contract": "Telefone encontrado no CONTRATO/CCB (apenas dígitos)",
-  "summary": "resumo extremamente conciso em 2-3 frases em linguagem simples para leigos, focando apenas no objetivo da ação e no veículo/banco envolvido.",
-  "valores_citados": [],
-  "alertas_golpe": [],
-  "perguntas_provaveis": []
+  "lawyers": [{"name": "...", "oab": "...", "role": "..."}],
+  "partner_law_firm": "escritório",
+  "phone_petition": "apenas_digitos_do_autor_na_peticao",
+  "phone_contract": "apenas_digitos_do_contrato",
+  "summary": "resumo extremamente conciso em 2-3 frases em linguagem simples para leigos, focando apenas no objetivo da ação e no veículo/banco envolvido."
 }`;
 
     // Truncate texts to avoid token limits
