@@ -65,15 +65,13 @@ export default function Clients() {
     toast.success(`${deletable.length} cliente(s) excluído(s).`);
   };
 
-  const handleExportCpfsSemTelefone = () => {
-    const semTelefone = clients.filter((c) => (!c.phone || c.phone.trim() === "") && (!c.phone_contract || c.phone_contract.trim() === ""));
-
-    if (semTelefone.length === 0) {
-      toast.info("Todos os clientes possuem telefone cadastrado.");
+  const handleExportAllCpfs = () => {
+    if (clients.length === 0) {
+      toast.info("Nenhum cliente cadastrado.");
       return;
     }
 
-    const cpfs = semTelefone
+    const cpfs = clients
       .map((c) => c.cpf_or_identifier || "")
       .filter(Boolean)
       .join("\n");
@@ -82,10 +80,10 @@ export default function Clients() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "cpfs-sem-telefone.txt";
+    a.download = "todos-os-cpfs.txt";
     a.click();
     URL.revokeObjectURL(url);
-    toast.success(`${semTelefone.length} CPF(s) exportado(s).`);
+    toast.success(`${clients.length} CPF(s) exportado(s).`);
   };
 
   const handleUploadPhones = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -173,11 +171,11 @@ export default function Clients() {
       const profFinal = profVal && profVal !== "N/A" && profVal !== "" ? profVal : null;
 
       const updateData: Record<string, any> = {};
-      if (nascVal) updateData.birth_date = nascVal;
-      if (rendaFinal) updateData.income = rendaFinal;
-      if (profFinal) updateData.profession = profFinal;
-      if (vehiclesVal) updateData.vehicles = vehiclesVal;
-      if (banksVal) updateData.banks = banksVal;
+      if (nascVal && nascVal !== client.birth_date) updateData.birth_date = nascVal;
+      if (rendaFinal && rendaFinal !== client.income) updateData.income = rendaFinal;
+      if (profFinal && profFinal !== client.profession) updateData.profession = profFinal;
+      if (vehiclesVal && vehiclesVal !== client.vehicles) updateData.vehicles = vehiclesVal;
+      if (banksVal && banksVal !== client.banks) updateData.banks = banksVal;
       if (mergedPhones && mergedPhones !== client.phone) updateData.phone = mergedPhones;
 
       if (Object.keys(updateData).length > 0) {
@@ -213,8 +211,8 @@ export default function Clients() {
           </div>
           {clients.length > 0 && (
             <div className="flex gap-2 flex-wrap">
-              <Button variant="outline" size="sm" onClick={handleExportCpfsSemTelefone} className="text-xs">
-                <Download className="w-4 h-4 mr-1.5" /> CPFs sem telefone
+              <Button variant="outline" size="sm" onClick={handleExportAllCpfs} className="text-xs">
+                <Download className="w-4 h-4 mr-1.5" /> Exportar todos CPFs
               </Button>
               <label>
                 <input type="file" accept=".txt" className="hidden" onChange={handleUploadPhones} />
