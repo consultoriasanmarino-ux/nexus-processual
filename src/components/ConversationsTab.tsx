@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, Sparkles, Loader2, MessageSquare, User, Bot } from "lucide-react";
+import { Send, Sparkles, Loader2, MessageSquare, User, Bot, Image as ImageIcon, X, Trash2, Info } from "lucide-react";
 import { toast } from "sonner";
 import type { Case, Conversation, Message } from "@/lib/types";
+import { formatPhone } from "@/lib/utils";
 
 interface Props {
   caseId: string;
@@ -17,48 +18,25 @@ interface Props {
 
 export function ConversationsTab({ caseId, caseData, conversations, messages, onRefresh }: Props) {
   const { user } = useAuth();
-  const [clientMsg, setClientMsg] = useState("");
-  const [operatorMsg, setOperatorMsg] = useState("");
-  const [suggesting, setSuggesting] = useState(false);
-  const [suggestion, setSuggestion] = useState<{ short: string; standard: string; state: string } | null>(null);
-  const [senderTab, setSenderTab] = useState<"client" | "operator">("client");
+  const [userInput, setUserInput] = useState("");
+  const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const [isAskingAI, setIsAskingAI] = useState(false);
+  const [aiResponse, setAiResponse] = useState<{
+    analysis: string;
+    suggestions: { label: string; text: string }[];
+    advice: string;
+  } | null>(null);
+  const [senderTab, setSenderTab] = useState<"assistant" | "client" | "operator">("assistant");
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const conversationId = conversations[0]?.id;
 
   const toTitleCase = (str: string) =>
     str.toLowerCase().replace(/(?:^|\s|[-/])\S/g, (c) => c.toUpperCase());
 
-  // Simplify defendant name: keep only the trading name before comma or legal suffix
-  const simplifyDefendant = (name: string) => {
-    // Remove common legal suffixes and everything after them
-    let simplified = name.replace(/[,\s]+(financiamento|crédito|credito|investimento|seguros|previdência|previdencia|participações|participacoes|administradora|corretora|distribuidora)\b.*/i, "");
-    // Remove S.A., S/A, LTDA, ME, EPP, EIRELI etc.
-    simplified = simplified.replace(/\s*(s\.?\/?a\.?|ltda\.?|me|epp|eireli)\.?\s*$/i, "").trim();
-    return simplified || name;
-  };
-
-  // Extract just the city + state from court string
-  const simplifyCourtToComarca = (court: string) => {
-    // Try to extract city name from patterns like "Vara Cível da Comarca de FARROUPILHA – RS"
-    const comarcaMatch = court.match(/comarca\s+de\s+(.+)/i);
-    if (comarcaMatch) {
-      return comarcaMatch[1].trim();
-    }
-    // Try "Foro de CIDADE" or "Foro Central"
-    const foroMatch = court.match(/foro\s+(?:de\s+|central\s+)?(.+)/i);
-    if (foroMatch) {
-      return foroMatch[1].trim();
-    }
-    return court;
-  };
-
   const clientName = (caseData as any).clients?.full_name || "Cliente";
   const firstName = toTitleCase(clientName.split(" ")[0]);
-  const defendantName = caseData.defendant ? toTitleCase(simplifyDefendant(caseData.defendant)) : "a parte ré";
-  const courtDisplay = caseData.court
-    ? toTitleCase(simplifyCourtToComarca(caseData.court)).replace(/\b(rs|sp|rj|mg|pr|sc|ba|go|df|es|pe|ce|ma|pa|mt|ms|am|pi|rn|pb|se|al|to|ro|ac|ap|rr)\b/gi, (s) => s.toUpperCase())
-    : "comarca não informada";
-  const initialMessage = `Olá, ${firstName}! Tenho novidades sobre sua ação de revisão contra o ${defendantName} (Comarca de ${courtDisplay}). Poderia confirmar se recebeu esta mensagem?`;
+  const initialMessage = `Olá, ${firstName}! Tenho novidades sobre sua ação de revisão...`; // Simplified for the component, actual from props/state if needed
 
   const addMessage = async (sender: string, text: string) => {
     if (!user || !conversationId) return;
@@ -71,169 +49,258 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
     onRefresh();
   };
 
-  const handlePasteClientMsg = async () => {
-    if (!clientMsg.trim()) return;
-    await addMessage("client", clientMsg.trim());
-    setClientMsg("");
+  const handleImagePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of Array.from(items)) {
+      if (item.type.indexOf("image") !== -1) {
+        const file = item.getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            setAttachedImage(event.target?.result as string);
+            toast.success("Imagem colada!");
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+    }
   };
 
-  const handlePasteOperatorMsg = async () => {
-    if (!operatorMsg.trim()) return;
-    await addMessage("operator", operatorMsg.trim());
-    setOperatorMsg("");
-    toast.success("Mensagem do operador registrada.");
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setAttachedImage(event.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
-  const handleSuggestReply = async () => {
-    setSuggesting(true);
-    setSuggestion(null);
+  const handleAskAI = async () => {
+    if (!userInput.trim() && !attachedImage) {
+      toast.error("Digite algo ou anexe uma imagem para o assistente.");
+      return;
+    }
+
+    setIsAskingAI(true);
     try {
       const { data, error } = await supabase.functions.invoke("ai-message", {
         body: {
-          action: "suggest_reply",
+          action: "chat_assistant",
           caseId,
           caseTitle: caseData.case_title,
           distributionDate: caseData.distribution_date,
           defendant: caseData.defendant,
           court: caseData.court,
-          partnerFirm: caseData.partner_law_firm_name,
-          partnerLawyer: caseData.partner_lawyer_name,
-          companyContext: caseData.company_context,
           caseValue: (caseData as any).case_value,
-          userId: user?.id,
           recentMessages: messages.map((m) => ({ sender: m.sender, text: m.message_text })),
+          userQuery: userInput,
+          image: attachedImage,
         },
       });
+
       if (error) throw error;
-      setSuggestion(data);
+      setAiResponse(data);
+      // If user typed something personal to the AI, we don't necessarily register it in the "client conversation"
+      // unless they use one of the suggestions.
+      toast.success("Nexus analisou a situação!");
     } catch (err: any) {
-      toast.error(err.message || "Erro ao gerar sugestão.");
+      toast.error(err.message || "Erro na análise da IA.");
     }
-    setSuggesting(false);
+    setIsAskingAI(false);
   };
 
   const handleUseSuggestion = async (text: string) => {
     await addMessage("operator", text);
-    setSuggestion(null);
+    setAiResponse(null);
+    setUserInput("");
+    setAttachedImage(null);
+    toast.success("Resposta registrada no histórico.");
+  };
+
+  const handleRegisterRaw = async () => {
+    const sender = senderTab === "client" ? "client" : "operator";
+    await addMessage(sender, userInput);
+    setUserInput("");
     toast.success("Mensagem registrada.");
   };
 
   return (
     <div className="space-y-4 animate-fade-in">
-      {/* Initial message template */}
-      <div className="bg-card border border-primary/20 rounded-xl p-4 space-y-2">
-        <div className="flex items-center gap-2 text-xs text-primary font-medium">
-          <MessageSquare className="w-3.5 h-3.5" />
-          Mensagem inicial (copiar e enviar ao cliente)
+      {/* Initial message helper */}
+      <div className="bg-card border border-primary/20 rounded-xl p-3 flex items-center justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] text-primary font-bold uppercase tracking-wider mb-1">Sugestão Inicial</p>
+          <p className="text-sm truncate opacity-60 italic">{initialMessage}</p>
         </div>
-        <p className="text-sm bg-secondary rounded-lg p-3 whitespace-pre-wrap select-all cursor-pointer" title="Clique para selecionar" onClick={() => { navigator.clipboard.writeText(initialMessage); toast.success("Mensagem copiada!"); }}>
-          {initialMessage}
-        </p>
+        <Button size="sm" variant="outline" className="h-8 text-xs font-semibold" onClick={() => { navigator.clipboard.writeText(initialMessage); toast.success("Copiada!"); }}>
+          Copiar
+        </Button>
       </div>
 
-      {/* Messages */}
-      <div className="bg-card border border-border rounded-xl p-4 max-h-96 overflow-y-auto space-y-3">
+      {/* Chat History Area */}
+      <div className="bg-card border border-border rounded-xl p-4 h-80 overflow-y-auto space-y-3 custom-scrollbar">
         {messages.length === 0 ? (
-          <div className="text-center py-10">
-            <MessageSquare className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">Nenhuma mensagem ainda.</p>
+          <div className="text-center py-10 opacity-40">
+            <MessageSquare className="w-8 h-8 mx-auto mb-2" />
+            <p className="text-xs">Inicie a conversa para manter o histórico...</p>
           </div>
         ) : (
           messages.map((m) => (
             <div key={m.id} className={`flex gap-2 ${m.sender === "operator" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[80%] rounded-xl px-4 py-2.5 text-sm ${
-                m.sender === "operator"
-                  ? "bg-primary/15 border border-primary/20 text-foreground"
-                  : "bg-secondary text-foreground"
-              }`}>
-                <div className="flex items-center gap-1.5 mb-1">
-                  {m.sender === "client" ? <User className="w-3 h-3 text-muted-foreground" /> : <Bot className="w-3 h-3 text-primary" />}
-                  <span className="text-[10px] text-muted-foreground font-medium">{m.sender === "client" ? "Cliente" : "Operador"}</span>
+              <div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${m.sender === "operator"
+                  ? "bg-primary/20 border border-primary/30 text-foreground ml-auto"
+                  : "bg-secondary border border-border text-foreground"
+                }`}>
+                <div className="flex items-center gap-1.5 mb-1 opacity-60">
+                  {m.sender === "client" ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3 text-primary" />}
+                  <span className="text-[10px] font-bold uppercase">{m.sender === "client" ? "Cliente" : "Operador"}</span>
                 </div>
-                <p className="whitespace-pre-wrap">{m.message_text}</p>
-                <p className="text-[10px] text-muted-foreground mt-1">{new Date(m.created_at).toLocaleString("pt-BR")}</p>
+                <p className="whitespace-pre-wrap leading-relaxed">{m.message_text}</p>
+                <p className="text-[9px] opacity-40 mt-1">{new Date(m.created_at).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' })}</p>
               </div>
             </div>
           ))
         )}
       </div>
 
-      {/* Input area with sender tabs */}
-      <div className="bg-card border border-border rounded-xl p-4 space-y-3">
+      {/* Input / Assistant Area */}
+      <div className="bg-card border border-border rounded-xl p-4 space-y-4 shadow-sm">
         <div className="flex gap-1 bg-secondary rounded-lg p-1">
-          <button
-            onClick={() => setSenderTab("client")}
-            className={`flex-1 text-xs font-medium py-1.5 px-3 rounded-md transition-colors ${
-              senderTab === "client" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <User className="w-3 h-3 inline mr-1" /> Mensagem do Cliente
-          </button>
-          <button
-            onClick={() => setSenderTab("operator")}
-            className={`flex-1 text-xs font-medium py-1.5 px-3 rounded-md transition-colors ${
-              senderTab === "operator" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Bot className="w-3 h-3 inline mr-1" /> Mensagem que Enviei
-          </button>
+          {[
+            { id: "assistant", label: "Perguntar à IA", icon: Sparkles },
+            { id: "client", label: "Voz do Cliente", icon: User },
+            { id: "operator", label: "Minha Voz", icon: Send },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setSenderTab(tab.id as any)}
+              className={`flex-1 flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase py-2 px-2 rounded-md transition-all ${senderTab === tab.id ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
+                }`}
+            >
+              <tab.icon className="w-3 h-3" /> {tab.label}
+            </button>
+          ))}
         </div>
 
-        {senderTab === "client" ? (
-          <>
-            <Textarea
-              placeholder="Cole aqui a mensagem recebida do cliente..."
-              value={clientMsg}
-              onChange={(e) => setClientMsg(e.target.value)}
-              className="bg-secondary border-border min-h-[80px] resize-none"
-            />
-            <div className="flex items-center gap-2">
-              <Button onClick={handlePasteClientMsg} disabled={!clientMsg.trim()} variant="outline" size="sm">
-                <Send className="w-3 h-3 mr-1" /> Registrar mensagem do cliente
-              </Button>
-              <Button onClick={handleSuggestReply} disabled={suggesting} size="sm" className="bg-gradient-gold text-primary-foreground hover:opacity-90 text-xs">
-                {suggesting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Sparkles className="w-3 h-3 mr-1" />}
-                Sugerir resposta
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <Textarea
-              placeholder="Cole aqui a mensagem que você enviou ao cliente..."
-              value={operatorMsg}
-              onChange={(e) => setOperatorMsg(e.target.value)}
-              className="bg-secondary border-border min-h-[80px] resize-none"
-            />
-            <Button onClick={handlePasteOperatorMsg} disabled={!operatorMsg.trim()} variant="outline" size="sm">
-              <Send className="w-3 h-3 mr-1" /> Registrar mensagem enviada
+        <div className="relative group">
+          <Textarea
+            placeholder={
+              senderTab === "assistant"
+                ? "Explique a situação ou cole um print da conversa aqui..."
+                : "Digite a mensagem para registrar no histórico..."
+            }
+            value={userInput}
+            onChange={(e) => setUserInput(e.target.value)}
+            onPaste={senderTab === "assistant" ? handleImagePaste : undefined}
+            className="bg-secondary border-border min-h-[100px] max-h-[200px] resize-y pr-10 focus:ring-primary/20"
+          />
+          {senderTab === "assistant" && (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="absolute right-2 bottom-2 h-8 w-8 text-muted-foreground hover:text-primary"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <ImageIcon className="w-4 h-4" />
             </Button>
-          </>
+          )}
+          <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+        </div>
+
+        {attachedImage && (
+          <div className="relative w-24 h-24 rounded-lg overflow-hidden border-2 border-primary/40 animate-in zoom-in-95">
+            <img src={attachedImage} className="w-full h-full object-cover" alt="Anexo" />
+            <button
+              onClick={() => setAttachedImage(null)}
+              className="absolute top-1 right-1 bg-background/80 rounded-full p-0.5 hover:bg-destructive hover:text-white transition-colors"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
         )}
+
+        <div className="flex items-center gap-2">
+          {senderTab === "assistant" ? (
+            <Button
+              onClick={handleAskAI}
+              disabled={isAskingAI || (!userInput.trim() && !attachedImage)}
+              className="flex-1 bg-gradient-gold text-primary-foreground font-bold"
+            >
+              {isAskingAI ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Sparkles className="w-4 h-4 mr-2" />}
+              Analisar com Nexus
+            </Button>
+          ) : (
+            <Button
+              onClick={handleRegisterRaw}
+              disabled={!userInput.trim()}
+              variant="outline"
+              className="flex-1 font-semibold border-primary/20 hover:bg-primary/5"
+            >
+              Registrar no Histórico
+            </Button>
+          )}
+
+          {(userInput || attachedImage) && (
+            <Button variant="ghost" size="icon" onClick={() => { setUserInput(""); setAttachedImage(null); }} className="text-muted-foreground hover:text-destructive">
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Suggestion */}
-      {suggestion && (
-        <div className="bg-card border border-primary/30 rounded-xl p-4 space-y-3 shadow-glow animate-slide-up">
-          <div className="flex items-center gap-2 text-xs text-primary font-medium">
-            <Sparkles className="w-3.5 h-3.5" />
-            Estado do cliente: <span className="text-foreground font-semibold">{suggestion.state}</span>
+      {/* AI Intelligence Display */}
+      {aiResponse && (
+        <div className="bg-card border-2 border-primary/30 rounded-xl p-5 space-y-4 shadow-glow animate-slide-up">
+          <div className="flex items-center justify-between border-b border-border pb-3 mb-1">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-primary/10 rounded-lg">
+                <Bot className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-foreground">Nexus Assistente</h4>
+                <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Inteligência Estratégica</p>
+              </div>
+            </div>
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAiResponse(null)}>
+              <X className="w-3.5 h-3.5" />
+            </Button>
           </div>
 
-          <div className="space-y-2">
-            <div>
-              <p className="text-[10px] text-muted-foreground mb-1 uppercase tracking-wider">Resposta curta</p>
-              <p className="text-sm bg-secondary rounded-lg p-3">{suggestion.short}</p>
-              <Button size="sm" variant="ghost" className="text-xs mt-1" onClick={() => handleUseSuggestion(suggestion.short)}>
-                Usar esta
-              </Button>
+          <div className="space-y-4">
+            <div className="bg-primary/5 rounded-lg p-3 border border-primary/10">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-primary mb-1.5 uppercase tracking-wide">
+                <Info className="w-3.5 h-3.5" /> Análise da Conversa
+              </div>
+              <p className="text-sm leading-relaxed text-foreground/90">{aiResponse.analysis}</p>
             </div>
-            <div>
-              <p className="text-[10px] text-muted-foreground mb-1 uppercase tracking-wider">Resposta padrão</p>
-              <p className="text-sm bg-secondary rounded-lg p-3">{suggestion.standard}</p>
-              <Button size="sm" variant="ghost" className="text-xs mt-1" onClick={() => handleUseSuggestion(suggestion.standard)}>
-                Usar esta
-              </Button>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {aiResponse.suggestions.map((s, i) => (
+                <div key={i} className="group relative bg-secondary hover:bg-secondary/80 border border-border rounded-xl p-3 transition-all cursor-pointer" onClick={() => handleUseSuggestion(s.text)}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-black uppercase text-secondary-foreground/60">{s.label}</span>
+                    <Sparkles className="w-3 h-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                  <p className="text-xs line-clamp-3 italic text-foreground mb-3">"{s.text}"</p>
+                  <Button size="sm" variant="outline" className="w-full text-[10px] h-7 font-bold uppercase tracking-wider group-hover:bg-primary group-hover:text-primary-foreground transition-all">
+                    Usar Resposta
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-start gap-3 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
+              <div className="p-1 bg-amber-500/10 rounded-md text-amber-500 mt-0.5">
+                <Sparkles className="w-3 h-3" />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-amber-500/80 uppercase mb-1">Dica Estratégica</p>
+                <p className="text-xs font-medium text-foreground/80">{aiResponse.advice}</p>
+              </div>
             </div>
           </div>
         </div>
