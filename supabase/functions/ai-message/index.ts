@@ -79,17 +79,15 @@ Responda em JSON: { "analysis": "...", "suggestions": [{"label": "...", "text": 
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-2.0-flash",
         messages: aiMessages,
-        temperature: 0.1,
-        response_format: { type: "json_object" }
+        temperature: 0.2
       }),
     });
 
     if (!response.ok) {
       const err = await response.text();
-      console.error(`AI Gateway Error (${response.status}):`, err);
-      return new Response(JSON.stringify({ error: `IA Error: ${response.status}`, details: err }), {
+      return new Response(JSON.stringify({ error: `IA Indisponível (Gateway ${response.status})`, details: err }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -97,22 +95,22 @@ Responda em JSON: { "analysis": "...", "suggestions": [{"label": "...", "text": 
 
     const result = await response.json();
     const rawContent = result.choices?.[0]?.message?.content || "{}";
-    console.log("Raw AI Response:", rawContent);
 
     let parsed = {};
     try {
-      // Remove possible markdown code blocks
-      const cleanJson = rawContent.replace(/```json\s?|```/g, "").trim();
-      parsed = JSON.parse(cleanJson);
-    } catch (parseErr) {
-      console.error("JSON Parse Error:", parseErr, "Raw content:", rawContent);
-      // Fallback for non-JSON responses
+      // Extrai JSON apenas se houver blocos de código ou texto extra
       const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         parsed = JSON.parse(jsonMatch[0]);
       } else {
-        parsed = { error: "Erro ao processar resposta da IA", details: rawContent };
+        parsed = JSON.parse(rawContent);
       }
+    } catch (parseErr) {
+      console.error("Parse Error:", parseErr, rawContent);
+      parsed = {
+        error: "Resposta da IA em formato inválido",
+        details: rawContent.slice(0, 100)
+      };
     }
 
     return new Response(JSON.stringify(parsed), {

@@ -87,6 +87,11 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
 
     setIsAskingAI(true);
     try {
+      const recentMessages = messages.slice(-10).map((m) => ({ sender: m.sender, text: m.message_text }));
+      const caseValueNum = typeof (caseData as any).case_value === "string"
+        ? parseFloat((caseData as any).case_value.replace(/\D/g, "")) // Limpa caracteres não numéricos
+        : Number((caseData as any).case_value || 0);
+
       const { data, error } = await supabase.functions.invoke("ai-message", {
         body: {
           action: "chat_assistant",
@@ -95,14 +100,17 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
           distributionDate: caseData.distribution_date,
           defendant: caseData.defendant,
           court: caseData.court,
-          caseValue: (caseData as any).case_value,
-          recentMessages: messages.map((m) => ({ sender: m.sender, text: m.message_text })),
+          caseValue: caseValueNum,
+          recentMessages: recentMessages,
           userQuery: userInput,
           image: attachedImage,
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase Invoke Error:", error);
+        throw error;
+      }
 
       if (data?.error) {
         toast.error(`Sugestão Indisponível: ${data.error}`);
