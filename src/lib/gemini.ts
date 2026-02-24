@@ -1,8 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-const MODELS = ["gemini-2.0-flash"]; // User requested Gemini 2.5 (Flash). Stable name is usually 2.0-flash for now or specific versions. 
-// Note: If Google releases a literal 'gemini-2.5-flash', this list should be updated.
+const MODELS = ["gemini-2.5-flash"];
 
 interface GeminiPart {
     text?: string;
@@ -24,61 +23,72 @@ async function callGemini(systemPrompt: string, userParts: GeminiPart[]): Promis
     };
 
     // 1. Fetch keys from Supabase
-    const { data: dbKeys } = await supabase
-        .from("gemini_api_keys" as any)
-        .select("key_value")
-        .order("created_at", { ascending: true });
+    let dbKeys: any[] = [];
+    try {
+        const { data } = await supabase
+            .from("gemini_api_keys" as any)
+            .select("key_value")
+            .order("created_at", { ascending: true });
+        dbKeys = data || [];
+    } catch (e) {
+        console.warn("Could not fetch keys from Supabase table:", e);
+    }
 
     // 2. Combine with .env keys (legacy support)
     const envKeys = (import.meta.env.VITE_GEMINI_API_KEY || "").split(",").map((k: string) => k.trim()).filter(Boolean);
-    const apiKeys = [...(dbKeys?.map(k => k.key_value) || []), ...envKeys];
+    const apiKeys = [...dbKeys.map(k => k.key_value), ...envKeys];
 
     if (apiKeys.length === 0) {
-        throw new Error("Nenhuma chave de API do Gemini configurada. Vá em Configurações para adicionar.");
+        throw new Error("Nenhuma chave de API configurada. Adicione chaves em Configurações.");
     }
+
+    let lastErrorDetails = "";
 
     // Rotativo: Try each API Key
     for (const key of apiKeys) {
         for (const model of MODELS) {
             const url = `${BASE_URL}/${model}:generateContent?key=${key}`;
 
-            for (let attempt = 0; attempt < 1; attempt++) { // Reduced retry since we rotate keys
-                try {
-                    const res = await fetch(url, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(body),
-                    });
+            try {
+                console.log(`Tentando Gemini: ${model} com chave ${key.substring(0, 5)}...`);
+                const res = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
 
-                    if (res.ok) {
-                        const result = await res.json();
-                        const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
-                        console.log(`Gemini OK (${model}, chave ${key.substring(0, 4)}...${key.slice(-4)})`);
-                        return text;
-                    }
+                if (res.ok) {
+                    const result = await res.json();
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                    console.log(`Gemini Sucesso! (${model})`);
+                    return text;
+                }
 
-                    if (res.status === 429) {
-                        console.warn(`Limite (429) na chave ${key.substring(0, 4)}...`);
-                        break; // Try next key immediately
-                    }
+                const errJson = await res.json().catch(() => ({}));
+                const errMsg = errJson.error?.message || `Status ${res.status}`;
+                lastErrorDetails = `[${model}]: ${errMsg}`;
 
-                    if (res.status === 403 || res.status === 404) {
-                        console.warn(`Erro ${res.status} na chave ${key.substring(0, 4)}...`);
-                        break; // Try next key
-                    }
+                console.error(`Falha no Gemini (${model}):`, errMsg);
 
-                    const errText = await res.text();
-                    console.warn(`Erro Gemini (${res.status}):`, errText);
-                    break;
-                } catch (err) {
-                    console.error(`Fetch error:`, err);
+                // Se for erro de quota (429), pula para a PRÓXIMA CHAVE imediatamente
+                if (res.status === 429) {
                     break;
                 }
+
+                // Se for erro de "Modelo Não Encontrado" ou Permissão, tenta o PRÓXIMO MODELO desta chave
+                if (res.status === 404 || res.status === 403 || res.status === 400) {
+                    continue;
+                }
+
+            } catch (err: any) {
+                lastErrorDetails = err.message;
+                console.error(`Erro de rede:`, err);
+                break;
             }
         }
     }
 
-    throw new Error("TODAS as chaves de API falharam ou atingiram o limite. Adicione novas chaves em Configurações.");
+    throw new Error(`Todas as chaves falharam. Último erro: ${lastErrorDetails}`);
 }
 
 function extractJson(raw: string): any {
