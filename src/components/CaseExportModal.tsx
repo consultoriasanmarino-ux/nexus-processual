@@ -32,10 +32,8 @@ function buildExportText(caseData: Case): string {
   // MENSAGEM INICIAL SYNC
   const clientName = client?.full_name || "Cliente";
   const firstName = toTitleCase(clientName.split(" ")[0]);
-  const aiSummary = caseData.case_summary || "";
-  const initialMessage = aiSummary
-    ? `Olá, ${firstName}! Fizemos a análise do seu caso: ${aiSummary}`
-    : `Olá, ${firstName}! Tenho novidades sobre sua ação...`;
+
+  const initialMessage = `Olá, ${firstName}! Tudo bem?\nTenho novidades sobre sua ação de ${caseData.case_type || "revisão"} contra o ${caseData.defendant || "banco"} (${caseData.court || "Justiça"}). Poderia confirmar se recebeu esta mensagem?`;
 
   lines.push("💬 MENSAGEM PARA O CLIENTE");
   lines.push("───────────────────────────────────────");

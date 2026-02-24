@@ -309,40 +309,42 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
       </div>
 
       {/* AI Summary */}
-      <div className="bg-card border border-border rounded-xl p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-primary" /> Resumo da IA
-          </h3>
-          <Button size="sm" onClick={handleAnalyze} disabled={analyzing} className="bg-gradient-gold text-primary-foreground hover:opacity-90 text-xs">
-            {analyzing ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Sparkles className="w-3 h-3 mr-1" />}
-            {summaryOutput ? "Reanalisar" : "Analisar com IA"}
-          </Button>
-        </div>
+      {!isCaller && (
+        <div className="bg-card border border-border rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-primary" /> Resumo da IA
+            </h3>
+            <Button size="sm" onClick={handleAnalyze} disabled={analyzing} className="bg-gradient-gold text-primary-foreground hover:opacity-90 text-xs">
+              {analyzing ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Sparkles className="w-3 h-3 mr-1" />}
+              {summaryOutput ? "Reanalisar" : "Analisar com IA"}
+            </Button>
+          </div>
 
-        {summaryOutput ? (
-          <div className="prose prose-sm prose-invert max-w-none text-sm">
-            <ReactMarkdown>{summaryOutput.content}</ReactMarkdown>
-          </div>
-        ) : extracted ? (
-          <div className="space-y-3 text-sm">
-            {extracted.resumo && <p>{extracted.resumo}</p>}
-            {extracted.alertas_golpe && (
-              <div className="flex items-start gap-2 bg-destructive/10 border border-destructive/20 rounded-lg p-3">
-                <AlertTriangle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
-                <div className="text-xs">
-                  <p className="font-medium text-destructive">Alertas de risco</p>
-                  <ul className="list-disc pl-4 mt-1 text-muted-foreground">
-                    {(extracted.alertas_golpe as string[]).map((a: string, i: number) => <li key={i}>{a}</li>)}
-                  </ul>
+          {summaryOutput ? (
+            <div className="prose prose-sm prose-invert max-w-none text-sm">
+              <ReactMarkdown>{summaryOutput.content}</ReactMarkdown>
+            </div>
+          ) : extracted ? (
+            <div className="space-y-3 text-sm">
+              {extracted.resumo && <p>{extracted.resumo}</p>}
+              {extracted.alertas_golpe && (
+                <div className="flex items-start gap-2 bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+                  <AlertTriangle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
+                  <div className="text-xs">
+                    <p className="font-medium text-destructive">Alertas de risco</p>
+                    <ul className="list-disc pl-4 mt-1 text-muted-foreground">
+                      {(extracted.alertas_golpe as string[]).map((a: string, i: number) => <li key={i}>{a}</li>)}
+                    </ul>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">Faça upload de um PDF e clique em "Analisar com IA" para gerar o resumo.</p>
-        )}
-      </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Faça upload de um PDF e clique em "Analisar com IA" para gerar o resumo.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
