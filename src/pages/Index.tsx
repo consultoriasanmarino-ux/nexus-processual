@@ -47,27 +47,35 @@ export default function Index() {
   const [showMarked, setShowMarked] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
-    fetchData();
-  }, [user]);
+    if (user) {
+      fetchData();
+    }
+  }, [user, isCaller, callerInfo?.id]);
 
   const fetchData = async () => {
+    setLoading(true);
     const [casesRes, lawyersRes] = await Promise.all([
       supabase.from("cases").select("*, clients(*)").order("created_at", { ascending: false }),
       supabase.from("lawyers" as any).select("*").order("name"),
     ]);
+
     let allCases = (casesRes.data as any[]) ?? [];
-    setLawyers((lawyersRes.data as any as Lawyer[]) ?? []);
+    const lawyersData = (lawyersRes.data as any as Lawyer[]) ?? [];
+    setLawyers(lawyersData);
 
     // For callers, filter to only show assigned lawyers' cases
     if (isCaller && callerInfo) {
       allCases = allCases.filter((c) => {
-        if (callerInfo.lawyer_ids.includes("geral") && (c.lawyer_type !== "especifico" || !c.lawyer_id)) {
+        // If assigned to "geral", show cases without a specific lawyer
+        if (callerInfo.lawyer_ids.includes("geral") && (!c.lawyer_id || c.lawyer_type !== "especifico")) {
           return true;
         }
+
+        // Show cases for specific lawyers chosen in settings
         if (c.lawyer_id && callerInfo.lawyer_ids.includes(c.lawyer_id)) {
           return true;
         }
+
         return false;
       });
 
@@ -256,8 +264,8 @@ export default function Index() {
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-all duration-200 ${isActive
-                      ? "bg-foreground/10 text-foreground border-foreground/30 shadow-md"
-                      : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/50 hover:text-foreground"
+                    ? "bg-foreground/10 text-foreground border-foreground/30 shadow-md"
+                    : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/50 hover:text-foreground"
                     }`}
                 >
                   Todos
@@ -391,8 +399,8 @@ export default function Index() {
                     <button
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleCaseMark(c.id); }}
                       className={`absolute bottom-3 right-3 text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border transition-all ${isMarked
-                          ? "bg-muted/30 text-muted-foreground border-border hover:bg-warning/10 hover:text-warning hover:border-warning/30"
-                          : "bg-success/10 text-success border-success/20 hover:bg-success/20"
+                        ? "bg-muted/30 text-muted-foreground border-border hover:bg-warning/10 hover:text-warning hover:border-warning/30"
+                        : "bg-success/10 text-success border-success/20 hover:bg-success/20"
                         }`}
                       title={isMarked ? "Reativar caso" : "Marcar como concluído"}
                     >
