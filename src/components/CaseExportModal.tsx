@@ -33,7 +33,11 @@ function buildExportText(caseData: Case): string {
   const clientName = client?.full_name || "Cliente";
   const firstName = toTitleCase(clientName.split(" ")[0]);
 
-  const initialMessage = `Olá, ${firstName}! Tudo bem?\nTenho novidades sobre sua ação de ${caseData.case_type || "revisão"} contra o ${caseData.defendant || "banco"} (${caseData.court || "Justiça"}). Poderia confirmar se recebeu esta mensagem?`;
+  const caseType = (caseData.case_type || "ação judicial").toUpperCase();
+  const defendant = (caseData.defendant || "instituição").toUpperCase();
+  const court = caseData.court ? ` (${caseData.court})` : "";
+
+  const initialMessage = `Olá, ${firstName}! Tudo bem?\nTenho novidades sobre sua ação de ${caseType} contra o ${defendant}${court}. Poderia confirmar se recebeu esta mensagem?`;
 
   lines.push("💬 MENSAGEM PARA O CLIENTE");
   lines.push("───────────────────────────────────────");

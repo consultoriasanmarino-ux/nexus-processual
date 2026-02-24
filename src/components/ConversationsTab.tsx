@@ -44,7 +44,11 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
   const clientName = (caseData as any).clients?.full_name || "Cliente";
   const firstName = toTitleCase(clientName.split(" ")[0]);
 
-  const initialMessage = `Olá, ${firstName}! Tudo bem?\nTenho novidades sobre sua ação de ${caseData.case_type || "revisão"} contra o ${caseData.defendant || "banco"} (${caseData.court || "Justiça"}). Poderia confirmar se recebeu esta mensagem?`;
+  const caseType = (caseData.case_type || "ação judicial").toUpperCase();
+  const defendant = (caseData.defendant || "instituição").toUpperCase();
+  const court = caseData.court ? ` (${caseData.court})` : "";
+
+  const initialMessage = `Olá, ${firstName}! Tudo bem?\nTenho novidades sobre sua ação de ${caseType} contra o ${defendant}${court}. Poderia confirmar se recebeu esta mensagem?`;
 
   const addMessage = async (sender: string, text: string) => {
     if (!user || !conversationId) return;
@@ -115,10 +119,10 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
             return (
               <div key={m.id} className={`flex ${sender === "user" ? "justify-end" : "justify-start animate-fade-in"}`}>
                 <div className={`max-w-[85%] rounded-2xl p-3 shadow-sm ${sender === "user"
-                    ? "bg-primary text-primary-foreground rounded-tr-none"
-                    : sender === "ai"
-                      ? "bg-secondary border border-border rounded-tl-none"
-                      : "bg-blue-600/20 border border-blue-500/20 text-blue-100 rounded-tl-none"
+                  ? "bg-primary text-primary-foreground rounded-tr-none"
+                  : sender === "ai"
+                    ? "bg-secondary border border-border rounded-tl-none"
+                    : "bg-blue-600/20 border border-blue-500/20 text-blue-100 rounded-tl-none"
                   }`}>
                   <div className="flex items-center gap-1.5 mb-1.5 opacity-70">
                     {sender === "user" ? <User className="w-3 h-3" /> : sender === "ai" ? <Bot className="w-3 h-3" /> : <Users className="w-3 h-3" />}
