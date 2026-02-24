@@ -3,11 +3,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MessageSquare, Send, User, Bot, Sparkles, Copy, Check, Info, Users } from "lucide-react";
+import { MessageSquare, Send, User, Bot, Sparkles, Copy, Check, Info, Users, Paperclip, Loader2, X, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { Case, Conversation, Message } from "@/lib/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { aiMessage } from "@/lib/gemini";
 
 interface Props {
   caseId: string;
@@ -27,7 +28,10 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
   const [newMsg, setNewMsg] = useState("");
   const [sending, setSending] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeConv = conversations[0];
   const conversationId = activeConv?.id;
@@ -69,6 +73,69 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
     await addMessage("user", newMsg);
     setNewMsg("");
     setSending(false);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Por favor, selecione apenas imagens.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setSelectedImage(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAiHelp = async () => {
+    if (analyzing || (!newMsg.trim() && !selectedImage)) {
+      toast.error("Digite algo ou suba um print para a IA analisar.");
+      return;
+    }
+
+    setAnalyzing(true);
+    try {
+      const recent = messages.slice(-5).map(m => ({
+        sender: (m as any).sender,
+        text: (m as any).message_text
+      }));
+
+      const res = await aiMessage({
+        action: "chat_assistant",
+        caseTitle: caseData.case_title,
+        defendant: caseData.defendant,
+        caseType: caseData.case_type,
+        court: caseData.court,
+        recentMessages: recent,
+        caseValue: (caseData as any).case_value,
+        image: selectedImage,
+        userQuery: newMsg || "Analise o print e a situação atual."
+      });
+
+      if (res.error) {
+        toast.error(res.error);
+      } else {
+        // Build the AI text
+        let aiText = `🤖 **Análise da Nexus IA:**\n\n${res.analysis}\n\n💡 **Sugestões:**\n`;
+        res.suggestions.forEach((s: any) => {
+          aiText += `- ${s.label}: "${s.text}"\n`;
+        });
+        aiText += `\n🎯 **Conselho:** ${res.advice}`;
+
+        await addMessage("ai", aiText);
+        setNewMsg("");
+        setSelectedImage(null);
+      }
+    } catch (err: any) {
+      toast.error("Falha ao consultar IA.");
+      console.error(err);
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   const copyInitialMessage = () => {
@@ -139,27 +206,71 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
       </ScrollArea>
 
       <div className="p-4 bg-secondary/20 border-t border-border">
-        <form onSubmit={handleSend} className="flex gap-2">
-          <Input
-            value={newMsg}
-            onChange={(e) => setNewMsg(e.target.value)}
-            placeholder="Explique a situação ou cole um print da conversa aqui..."
-            className="flex-1 bg-secondary border-border h-11 text-sm rounded-xl focus-visible:ring-primary shadow-inner"
+        {selectedImage && (
+          <div className="mb-3 relative inline-block group">
+            <img src={selectedImage} alt="Preview" className="h-24 w-auto rounded-lg border border-primary/30 shadow-md animate-in zoom-in-50 duration-200" />
+            <button
+              onClick={() => setSelectedImage(null)}
+              className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 shadow-lg hover:scale-110 transition-transform"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+            accept="image/*"
+            className="hidden"
           />
+
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button type="button" variant="outline" className="h-11 w-11 rounded-xl bg-orange-500/10 border-orange-500/20 text-orange-400 hover:bg-orange-500/20 transition-all">
-                  <Sparkles className="w-5 h-5" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`h-11 w-11 rounded-xl bg-secondary border-border hover:bg-muted transition-all ${selectedImage ? "text-primary border-primary/30 bg-primary/5" : "text-muted-foreground"}`}
+                >
+                  <Paperclip className="w-5 h-5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent className="bg-card border-border text-xs">Pedir ajuda para a IA</TooltipContent>
+              <TooltipContent className="bg-card border-border text-xs">Anexar print da conversa</TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <Button type="submit" disabled={!newMsg.trim() || sending} className="h-11 px-5 rounded-xl bg-gradient-gold shadow-glow">
-            {sending ? <Send className="w-4 h-4 animate-pulse" /> : <Send className="w-4 h-4" />}
-          </Button>
-        </form>
+
+          <form onSubmit={handleSend} className="flex-1 flex gap-2">
+            <Input
+              value={newMsg}
+              onChange={(e) => setNewMsg(e.target.value)}
+              placeholder={selectedImage ? "Descreva o que deseja da IA sobre este print..." : "Explique a situação ou descreva o print..."}
+              className="flex-1 bg-secondary border-border h-11 text-sm rounded-xl focus-visible:ring-primary shadow-inner"
+            />
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    onClick={handleAiHelp}
+                    disabled={analyzing || (!newMsg.trim() && !selectedImage)}
+                    variant="outline"
+                    className="h-11 w-11 rounded-xl bg-orange-500/10 border-orange-500/20 text-orange-400 hover:bg-orange-500/20 transition-all shadow-glow-amber disabled:opacity-50"
+                  >
+                    {analyzing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-card border-border text-xs">Analisar print/situação com IA</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <Button type="submit" disabled={!newMsg.trim() || sending} className="h-11 px-5 rounded-xl bg-gradient-gold shadow-glow">
+              {sending ? <Send className="w-4 h-4 animate-pulse" /> : <Send className="w-4 h-4" />}
+            </Button>
+          </form>
+        </div>
       </div>
     </div>
   );
