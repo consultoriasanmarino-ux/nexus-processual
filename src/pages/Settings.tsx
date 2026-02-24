@@ -5,11 +5,11 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Trash2, Save, Loader2, Scale, UserCheck, Headphones, ShieldCheck, Phone, Check } from "lucide-react";
+import { Plus, Trash2, Save, Loader2, Scale, UserCheck, Headphones, ShieldCheck, Phone, Check, Key, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import type { Lawyer, Caller } from "@/lib/types";
 
-type SettingsTab = "advogados" | "tecladores";
+type SettingsTab = "advogados" | "tecladores" | "api_keys";
 
 export default function Settings() {
     const { user } = useAuth();
@@ -31,12 +31,48 @@ export default function Settings() {
     const [callerLawyerIds, setCallerLawyerIds] = useState<string[]>([]);
     const [savingCaller, setSavingCaller] = useState(false);
 
+    // API Keys state
+    const [apiKeys, setApiKeys] = useState<{ id: string; key_value: string; created_at: string }[]>([]);
+    const [newKey, setNewKey] = useState("");
+    const [loadingKeys, setLoadingKeys] = useState(true);
+    const [savingKey, setSavingKey] = useState(false);
+
     useEffect(() => {
         if (user) {
             fetchLawyers();
             fetchCallers();
+            fetchApiKeys();
         }
     }, [user]);
+
+    // ========== API KEYS ==========
+    const fetchApiKeys = async () => {
+        const { data } = await supabase
+            .from("gemini_api_keys" as any)
+            .select("*")
+            .order("created_at", { ascending: true });
+        setApiKeys((data as any[]) ?? []);
+        setLoadingKeys(false);
+    };
+
+    const handleAddKey = async () => {
+        if (!newKey.trim()) { toast.error("A chave não pode estar vazia."); return; }
+        if (!user) return;
+        setSavingKey(true);
+        const { error } = await supabase.from("gemini_api_keys" as any).insert({
+            key_value: newKey.trim(),
+            user_id: user.id
+        });
+        if (error) toast.error("Erro ao salvar chave de API.");
+        else { toast.success("Chave de API salva!"); setNewKey(""); fetchApiKeys(); }
+        setSavingKey(false);
+    };
+
+    const handleDeleteKey = async (id: string) => {
+        const { error } = await supabase.from("gemini_api_keys" as any).delete().eq("id", id);
+        if (error) toast.error("Erro ao excluir chave.");
+        else { toast.success("Chave removida."); setApiKeys((prev) => prev.filter((k) => k.id !== id)); }
+    };
 
     // ========== LAWYERS ==========
     const fetchLawyers = async () => {
@@ -143,16 +179,16 @@ export default function Settings() {
             <div className="p-4 md:p-8 max-w-3xl mx-auto">
                 <h1 className="text-2xl font-bold mb-1">Configurações</h1>
                 <p className="text-sm text-muted-foreground mb-6">
-                    Gerencie advogados e tecladores do sistema.
+                    Gerencie advogados, tecladores e chaves de API do sistema.
                 </p>
 
                 {/* Tabs */}
-                <div className="flex gap-2 mb-6">
+                <div className="flex flex-wrap gap-2 mb-6">
                     <button
                         onClick={() => setActiveTab("advogados")}
                         className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-all duration-200 flex items-center gap-2 ${activeTab === "advogados"
-                                ? "bg-primary/20 text-primary border-primary/40 shadow-md"
-                                : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/50"
+                            ? "bg-primary/20 text-primary border-primary/40 shadow-md"
+                            : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/50"
                             }`}
                     >
                         <Scale className="w-3.5 h-3.5" />
@@ -162,15 +198,94 @@ export default function Settings() {
                     <button
                         onClick={() => setActiveTab("tecladores")}
                         className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-all duration-200 flex items-center gap-2 ${activeTab === "tecladores"
-                                ? "bg-violet-500/20 text-violet-300 border-violet-500/40 shadow-md"
-                                : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/50"
+                            ? "bg-violet-500/20 text-violet-300 border-violet-500/40 shadow-md"
+                            : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/50"
                             }`}
                     >
                         <Headphones className="w-3.5 h-3.5" />
                         Tecladores
                         <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded-full">{callers.length}</span>
                     </button>
+                    <button
+                        onClick={() => setActiveTab("api_keys")}
+                        className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-all duration-200 flex items-center gap-2 ${activeTab === "api_keys"
+                            ? "bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-md"
+                            : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/50"
+                            }`}
+                    >
+                        <Key className="w-3.5 h-3.5" />
+                        Chaves Gemini 2.5
+                        <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded-full">{apiKeys.length}</span>
+                    </button>
                 </div>
+
+                {/* ===== TAB: API KEYS ===== */}
+                {activeTab === "api_keys" && (
+                    <div className="space-y-6 animate-fade-in">
+                        <div className="bg-card border border-border rounded-xl p-6 shadow-card space-y-4">
+                            <h3 className="text-sm font-semibold flex items-center gap-2">
+                                <Plus className="w-4 h-4 text-amber-400" /> Adicionar Chave de API
+                            </h3>
+                            <p className="text-xs text-muted-foreground -mt-2">
+                                Adicione chaves das suas contas do Google Cloud Console para que o sistema rotacione entre elas.
+                            </p>
+                            <div className="flex gap-2">
+                                <Input
+                                    value={newKey}
+                                    onChange={(e) => setNewKey(e.target.value)}
+                                    placeholder="Cole aqui sua API Key (AIza...)"
+                                    className="bg-secondary border-border font-mono text-xs"
+                                />
+                                <Button onClick={handleAddKey} disabled={savingKey || !newKey.trim()} className="bg-amber-600 hover:bg-amber-700 text-white">
+                                    {savingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                </Button>
+                            </div>
+                            <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+                                <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                                <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                                    O sistema usará apenas o modelo **Gemini 2.5 Flash** (via API). Se uma chave falhar ou atingir o limite, ele trocará automaticamente para a próxima chave da lista abaixo.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="bg-card border border-border rounded-xl p-6 shadow-card">
+                            <h3 className="text-sm font-semibold flex items-center gap-2 mb-4">
+                                <Key className="w-4 h-4 text-amber-400" /> Chaves Ativas
+                            </h3>
+
+                            {loadingKeys ? (
+                                <div className="flex justify-center py-8">
+                                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                                </div>
+                            ) : apiKeys.length === 0 ? (
+                                <p className="text-sm text-muted-foreground text-center py-6">
+                                    Nenhuma chave cadastrada. Adicione chaves para evitar interrupções.
+                                </p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {apiKeys.map((k) => (
+                                        <div key={k.id} className="flex items-center justify-between bg-secondary/30 border border-border rounded-lg px-4 py-3 group">
+                                            <div className="flex items-center gap-3 overflow-hidden">
+                                                <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center border border-amber-500/20">
+                                                    <Key className="w-4 h-4 text-amber-400" />
+                                                </div>
+                                                <div className="overflow-hidden">
+                                                    <p className="text-xs font-mono text-muted-foreground truncate max-w-[200px] sm:max-w-md">
+                                                        {k.key_value.substring(0, 10)}*******************{k.key_value.slice(-4)}
+                                                    </p>
+                                                    <p className="text-[10px] text-muted-foreground/60">Adicionada em {new Date(k.created_at).toLocaleDateString()}</p>
+                                                </div>
+                                            </div>
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive" onClick={() => handleDeleteKey(k.id)}>
+                                                <Trash2 className="w-4 h-4" />
+                                            </Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* ===== TAB: ADVOGADOS ===== */}
                 {activeTab === "advogados" && (
@@ -291,8 +406,8 @@ export default function Settings() {
                                         type="button"
                                         onClick={() => toggleCallerLawyer("geral")}
                                         className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left text-sm transition-all ${callerLawyerIds.includes("geral")
-                                                ? "bg-primary/10 border-primary/40 text-foreground"
-                                                : "bg-secondary/50 border-border text-muted-foreground hover:border-primary/30"
+                                            ? "bg-primary/10 border-primary/40 text-foreground"
+                                            : "bg-secondary/50 border-border text-muted-foreground hover:border-primary/30"
                                             }`}
                                     >
                                         <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${callerLawyerIds.includes("geral") ? "bg-primary border-primary" : "border-muted-foreground/30"
@@ -311,8 +426,8 @@ export default function Settings() {
                                             type="button"
                                             onClick={() => toggleCallerLawyer(l.id)}
                                             className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left text-sm transition-all ${callerLawyerIds.includes(l.id)
-                                                    ? "bg-violet-500/10 border-violet-500/40 text-foreground"
-                                                    : "bg-secondary/50 border-border text-muted-foreground hover:border-violet-500/30"
+                                                ? "bg-violet-500/10 border-violet-500/40 text-foreground"
+                                                : "bg-secondary/50 border-border text-muted-foreground hover:border-violet-500/30"
                                                 }`}
                                         >
                                             <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${callerLawyerIds.includes(l.id) ? "bg-violet-500 border-violet-500" : "border-muted-foreground/30"
@@ -358,8 +473,8 @@ export default function Settings() {
                                         <div
                                             key={caller.id}
                                             className={`border rounded-lg px-4 py-3 group transition-all ${caller.active
-                                                    ? "bg-violet-500/5 border-violet-500/20 hover:border-violet-500/40"
-                                                    : "bg-muted/20 border-border opacity-60"
+                                                ? "bg-violet-500/5 border-violet-500/20 hover:border-violet-500/40"
+                                                : "bg-muted/20 border-border opacity-60"
                                                 }`}
                                         >
                                             <div className="flex items-center justify-between mb-2">
@@ -379,8 +494,8 @@ export default function Settings() {
                                                     <button
                                                         onClick={() => handleToggleCallerActive(caller)}
                                                         className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border transition-colors ${caller.active
-                                                                ? "bg-success/10 text-success border-success/20 hover:bg-success/20"
-                                                                : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/50"
+                                                            ? "bg-success/10 text-success border-success/20 hover:bg-success/20"
+                                                            : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/50"
                                                             }`}
                                                     >
                                                         {caller.active ? "Ativo" : "Inativo"}

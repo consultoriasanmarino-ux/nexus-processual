@@ -1,6 +1,8 @@
-const GEMINI_API_KEYS = (import.meta.env.VITE_GEMINI_API_KEY || "").split(",").map((k: string) => k.trim()).filter(Boolean);
+import { supabase } from "@/integrations/supabase/client";
+
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-const MODELS = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+const MODELS = ["gemini-2.0-flash"]; // User requested Gemini 2.5 (Flash). Stable name is usually 2.0-flash for now or specific versions. 
+// Note: If Google releases a literal 'gemini-2.5-flash', this list should be updated.
 
 interface GeminiPart {
     text?: string;
@@ -21,17 +23,26 @@ async function callGemini(systemPrompt: string, userParts: GeminiPart[]): Promis
         },
     };
 
-    if (GEMINI_API_KEYS.length === 0) {
-        throw new Error("Nenhuma chave de API do Gemini configurada no arquivo .env");
+    // 1. Fetch keys from Supabase
+    const { data: dbKeys } = await supabase
+        .from("gemini_api_keys" as any)
+        .select("key_value")
+        .order("created_at", { ascending: true });
+
+    // 2. Combine with .env keys (legacy support)
+    const envKeys = (import.meta.env.VITE_GEMINI_API_KEY || "").split(",").map((k: string) => k.trim()).filter(Boolean);
+    const apiKeys = [...(dbKeys?.map(k => k.key_value) || []), ...envKeys];
+
+    if (apiKeys.length === 0) {
+        throw new Error("Nenhuma chave de API do Gemini configurada. Vá em Configurações para adicionar.");
     }
 
-    // Try each API Key
-    for (const key of GEMINI_API_KEYS) {
-        // For each key, try available models
+    // Rotativo: Try each API Key
+    for (const key of apiKeys) {
         for (const model of MODELS) {
             const url = `${BASE_URL}/${model}:generateContent?key=${key}`;
 
-            for (let attempt = 0; attempt < 2; attempt++) {
+            for (let attempt = 0; attempt < 1; attempt++) { // Reduced retry since we rotate keys
                 try {
                     const res = await fetch(url, {
                         method: "POST",
@@ -42,42 +53,36 @@ async function callGemini(systemPrompt: string, userParts: GeminiPart[]): Promis
                     if (res.ok) {
                         const result = await res.json();
                         const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
-                        console.log(`Gemini OK (${model}, chave iniciada em ${key.substring(0, 6)})`);
+                        console.log(`Gemini OK (${model}, chave ${key.substring(0, 4)}...${key.slice(-4)})`);
                         return text;
                     }
 
                     if (res.status === 429) {
-                        console.warn(`Limite (429) na chave ${key.substring(0, 6)} modelo ${model} (tentativa ${attempt + 1})`);
-                        if (attempt === 0) {
-                            await sleep(1000);
-                            continue;
-                        }
-                        break;
+                        console.warn(`Limite (429) na chave ${key.substring(0, 4)}...`);
+                        break; // Try next key immediately
                     }
 
-                    if (res.status === 404 || res.status === 403) {
-                        console.warn(`Erro ${res.status} (Modelo ${model} ou Chave) para a chave ${key.substring(0, 6)}. Tentando próximo...`);
-                        break; // Try next model/key
+                    if (res.status === 403 || res.status === 404) {
+                        console.warn(`Erro ${res.status} na chave ${key.substring(0, 4)}...`);
+                        break; // Try next key
                     }
 
-                    // For other errors, don't throw yet, try next model/key
                     const errText = await res.text();
-                    console.warn(`Gemini error (${model}, status ${res.status}):`, errText);
+                    console.warn(`Erro Gemini (${res.status}):`, errText);
                     break;
-                } catch (err: any) {
-                    console.error(`Fetch error (${model}):`, err);
+                } catch (err) {
+                    console.error(`Fetch error:`, err);
                     break;
                 }
             }
         }
     }
 
-    throw new Error("Erro de conexão ou limites atingidos em TODAS as chaves. Verifique suas API Keys no .env.");
+    throw new Error("TODAS as chaves de API falharam ou atingiram o limite. Adicione novas chaves em Configurações.");
 }
 
 function extractJson(raw: string): any {
     try {
-        // Remove markdown code blocks if present
         let jsonStr = raw;
         const codeBlockMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
         if (codeBlockMatch) jsonStr = codeBlockMatch[1];
@@ -160,16 +165,14 @@ Responda APENAS com JSON:
   "summary": "RESUMO_2_OU_3_FRASES_SOBRE_O_DIREITO_E_VALORES"
 }`;
 
-    // Smart text truncation: keep beginning (client data) + end (financial values)
-    // Values are almost always in the last pages of the petition
     const fullPetition = petitionText || "";
     const MAX_TOTAL = 14000;
     let pText: string;
     if (fullPetition.length <= MAX_TOTAL) {
         pText = fullPetition;
     } else {
-        const HEAD = 7000; // First pages: client info, case details, court
-        const TAIL = 7000; // Last pages: financial values, totals, signatures
+        const HEAD = 7000;
+        const TAIL = 7000;
         const head = fullPetition.slice(0, HEAD);
         const tail = fullPetition.slice(-TAIL);
         pText = head + "\n\n[... PÁGINAS INTERMEDIÁRIAS OMITIDAS ...]\n\n" + tail;
@@ -179,11 +182,9 @@ Responda APENAS com JSON:
         { text: `Telefone fornecido pelo operador: ${phoneProvided || "não informado"}\n\nTEXTO DA PETIÇÃO:\n${pText || "Não fornecido"}` },
     ];
 
-    // Add contract images for OCR (as inline data)
     if (contractImages && contractImages.length > 0) {
         userParts[0] = { text: `Telefone fornecido pelo operador: ${phoneProvided || "não informado"}\n\nTEXTO DA PETIÇÃO:\n${pText || "Não fornecido"}\n\nAs imagens abaixo são páginas do contrato/CCB. Extraia TODOS os dados, especialmente o CELULAR do cliente:` };
         for (const img of contractImages) {
-            // data:image/jpeg;base64,/9j/...
             const match = img.match(/^data:(image\/\w+);base64,(.+)$/);
             if (match) {
                 userParts.push({ inlineData: { mimeType: match[1], data: match[2] } });
