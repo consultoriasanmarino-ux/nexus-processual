@@ -6,12 +6,14 @@ import { toast } from "sonner";
 import type { Case } from "@/lib/types";
 import { formatPhone, formatCPF } from "@/lib/utils";
 import { exportAsPdf, exportAsOficio, exportPetition } from "./CaseCardExport";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Props {
   caseData: Case;
 }
 
 function toTitleCase(str: string) {
+  if (!str) return "";
   return str.toLowerCase().replace(/(?:^|\s|[-/])\S/g, (c) => c.toUpperCase());
 }
 
@@ -27,6 +29,19 @@ function buildExportText(caseData: Case): string {
 
   const lines: string[] = [];
 
+  // MENSAGEM INICIAL SYNC
+  const clientName = client?.full_name || "Cliente";
+  const firstName = toTitleCase(clientName.split(" ")[0]);
+  const aiSummary = caseData.case_summary || "";
+  const initialMessage = aiSummary
+    ? `Olá, ${firstName}! Fizemos a análise do seu caso: ${aiSummary}`
+    : `Olá, ${firstName}! Tenho novidades sobre sua ação...`;
+
+  lines.push("💬 MENSAGEM PARA O CLIENTE");
+  lines.push("───────────────────────────────────────");
+  lines.push(initialMessage);
+  lines.push("");
+
   if (caseData.case_summary) {
     lines.push("📋 RESUMO DO CASO");
     lines.push("───────────────────────────────────────");
@@ -40,7 +55,7 @@ function buildExportText(caseData: Case): string {
     lines.push(`Valor Principal: R$ ${principalValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
   }
   if (feeValue !== null) {
-    lines.push(`Honorários (${feePercent}%): R$ ${feeValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
+    lines.push(`Honorários (${feePercent || 0}%): R$ ${feeValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
   }
   if (netValue !== null) {
     lines.push(`Valor Líquido Cliente: R$ ${netValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
@@ -62,6 +77,7 @@ function buildExportText(caseData: Case): string {
 }
 
 export function CaseExportModal({ caseData }: Props) {
+  const { isCaller } = useAuth();
   const [copied, setCopied] = useState(false);
   const exportText = buildExportText(caseData);
 
@@ -87,32 +103,37 @@ export function CaseExportModal({ caseData }: Props) {
     <Dialog>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="text-xs">
-          <FileDown className="w-3.5 h-3.5 mr-1.5" /> Exportar Conteúdo
+          <Copy className="w-3.5 h-3.5 mr-1.5" /> Ver Texto de Exportação
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="text-base">Exportar Conteúdo do Caso</DialogTitle>
         </DialogHeader>
         <div className="flex flex-wrap gap-2 mb-4">
-          <Button size="sm" variant="outline" onClick={handleCopy} className="text-xs">
-            {copied ? <Check className="w-3.5 h-3.5 mr-1.5 text-primary" /> : <Copy className="w-3.5 h-3.5 mr-1.5" />}
-            {copied ? "Copiado!" : "Copiar Texto"}
+          <Button size="sm" variant="default" onClick={handleCopy} className="text-xs bg-primary text-primary-foreground hover:bg-primary/90">
+            {copied ? <Check className="w-3.5 h-3.5 mr-1.5" /> : <Copy className="w-3.5 h-3.5 mr-1.5" />}
+            {copied ? "Copiado!" : "Copiar Texto Completo"}
           </Button>
-          <Button size="sm" variant="outline" onClick={handleDownload} className="text-xs">
-            <FileTextIcon className="w-3.5 h-3.5 mr-1.5" /> Baixar .txt
-          </Button>
-          <Button size="sm" onClick={() => exportAsPdf(caseData)} className="bg-gradient-gold text-primary-foreground hover:opacity-90 text-xs shadow-glow">
-            <FileDown className="w-3.5 h-3.5 mr-1.5" /> Baixar Ficha (PDF)
-          </Button>
-          <Button size="sm" onClick={() => exportAsOficio(caseData)} className="bg-gradient-gold text-primary-foreground hover:opacity-90 text-xs shadow-glow">
-            <Stamp className="w-3.5 h-3.5 mr-1.5" /> Baixar Ofício
-          </Button>
-          <Button size="sm" onClick={() => exportPetition(caseData)} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs shadow-lg">
-            <Download className="w-3.5 h-3.5 mr-1.5" /> Baixar Petição
-          </Button>
+
+          {!isCaller && (
+            <>
+              <Button size="sm" variant="outline" onClick={handleDownload} className="text-xs">
+                <FileTextIcon className="w-3.5 h-3.5 mr-1.5" /> Baixar .txt
+              </Button>
+              <Button size="sm" onClick={() => exportAsPdf(caseData)} className="bg-gradient-gold text-primary-foreground hover:opacity-90 text-xs shadow-glow">
+                <FileDown className="w-3.5 h-3.5 mr-1.5" /> Baixar Ficha (PDF)
+              </Button>
+              <Button size="sm" onClick={() => exportAsOficio(caseData)} className="bg-gradient-gold text-primary-foreground hover:opacity-90 text-xs shadow-glow">
+                <Stamp className="w-3.5 h-3.5 mr-1.5" /> Baixar Ofício
+              </Button>
+              <Button size="sm" onClick={() => exportPetition(caseData)} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs shadow-lg">
+                <Download className="w-3.5 h-3.5 mr-1.5" /> Baixar Petição
+              </Button>
+            </>
+          )}
         </div>
-        <pre className="flex-1 overflow-auto bg-secondary rounded-lg p-4 text-xs whitespace-pre-wrap font-mono text-foreground border border-border">
+        <pre className="flex-1 overflow-auto bg-secondary/50 rounded-lg p-4 text-xs whitespace-pre-wrap font-mono text-foreground border border-border">
           {exportText}
         </pre>
       </DialogContent>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { aiAnalyze } from "@/lib/gemini";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -119,6 +120,7 @@ function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () =
 }
 
 export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Props) {
+  const { isCaller } = useAuth();
   const [analyzing, setAnalyzing] = useState(false);
   const [context, setContext] = useState(caseData.company_context || DEFAULT_COMPANY_CONTEXT);
   const [savingCtx, setSavingCtx] = useState(false);
@@ -185,66 +187,70 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
 
   return (
     <div className="space-y-4 animate-fade-in">
-      {/* Case Summary */}
-      <div className="bg-card border border-border rounded-xl p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
-            <ClipboardList className="w-4 h-4 text-primary" /> Resumo do Caso
-          </h3>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={async () => {
-              setSavingSummary(true);
-              const { error } = await supabase.from("cases").update({ case_summary: caseSummary } as any).eq("id", caseData.id);
-              if (error) toast.error("Erro ao salvar resumo.");
-              else { toast.success("Resumo salvo!"); onRefresh(); }
-              setSavingSummary(false);
-            }}
-            disabled={savingSummary || caseSummary === (caseData.case_summary || "")}
-            className="text-xs"
-          >
-            {savingSummary ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
-            Salvar
-          </Button>
-        </div>
-        <p className="text-[10px] text-muted-foreground mb-2">
-          Descreva o caso de forma resumida. Este texto será incluído na exportação.
-        </p>
-        <Textarea
-          value={caseSummary}
-          onChange={(e) => setCaseSummary(e.target.value)}
-          placeholder="Ex: A autora busca a revisão judicial de seu contrato de financiamento..."
-          className="bg-secondary border-border min-h-[100px] resize-y text-sm"
-        />
-      </div>
+      {!isCaller && (
+        <>
+          {/* Case Summary */}
+          <div className="bg-card border border-border rounded-xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <ClipboardList className="w-4 h-4 text-primary" /> Resumo do Caso
+              </h3>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  setSavingSummary(true);
+                  const { error } = await supabase.from("cases").update({ case_summary: caseSummary } as any).eq("id", caseData.id);
+                  if (error) toast.error("Erro ao salvar resumo.");
+                  else { toast.success("Resumo salvo!"); onRefresh(); }
+                  setSavingSummary(false);
+                }}
+                disabled={savingSummary || caseSummary === (caseData.case_summary || "")}
+                className="text-xs"
+              >
+                {savingSummary ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+                Salvar
+              </Button>
+            </div>
+            <p className="text-[10px] text-muted-foreground mb-2">
+              Descreva o caso de forma resumida. Este texto será incluído na exportação.
+            </p>
+            <Textarea
+              value={caseSummary}
+              onChange={(e) => setCaseSummary(e.target.value)}
+              placeholder="Ex: A autora busca a revisão judicial de seu contrato de financiamento..."
+              className="bg-secondary border-border min-h-[100px] resize-y text-sm"
+            />
+          </div>
 
-      {/* Company Context */}
-      <div className="bg-card border border-border rounded-xl p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-primary" /> Contexto da Empresa
-          </h3>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleSaveContext}
-            disabled={savingCtx || context === (caseData.company_context || DEFAULT_COMPANY_CONTEXT)}
-            className="text-xs"
-          >
-            {savingCtx ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
-            Salvar
-          </Button>
-        </div>
-        <p className="text-[10px] text-muted-foreground mb-2">
-          Este contexto é usado pela IA para responder mensagens e gerar abordagens. Edite conforme necessário.
-        </p>
-        <Textarea
-          value={context}
-          onChange={(e) => setContext(e.target.value)}
-          className="bg-secondary border-border min-h-[120px] resize-y text-sm"
-        />
-      </div>
+          {/* Company Context */}
+          <div className="bg-card border border-border rounded-xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-primary" /> Contexto da Empresa
+              </h3>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSaveContext}
+                disabled={savingCtx || context === (caseData.company_context || DEFAULT_COMPANY_CONTEXT)}
+                className="text-xs"
+              >
+                {savingCtx ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+                Salvar
+              </Button>
+            </div>
+            <p className="text-[10px] text-muted-foreground mb-2">
+              Este contexto é usado pela IA para responder mensagens e gerar abordagens. Edite conforme necessário.
+            </p>
+            <Textarea
+              value={context}
+              onChange={(e) => setContext(e.target.value)}
+              className="bg-secondary border-border min-h-[120px] resize-y text-sm"
+            />
+          </div>
+        </>
+      )}
 
       {/* Case info cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
