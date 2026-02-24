@@ -162,15 +162,29 @@ export default function Index() {
     return list;
   }, [cases, activeTab, search, isCaller, showMarked, markedCases]);
 
-  // Calculate case counts per client to show "Multiple Cases" badge
-  const clientCaseCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
+  // Group cases by client (Name + CPF) to sync information visually
+  const clientAggregates = useMemo(() => {
+    const groups: Record<string, { count: number; phone: string | null; phone_contract: string | null }> = {};
+
     cases.forEach((c) => {
-      if (c.client_id) {
-        counts[c.client_id] = (counts[c.client_id] || 0) + 1;
+      const client = (c as any).clients;
+      if (!client) return;
+
+      // Use CPF as primary key, fallback to normalized name
+      const key = client.cpf_or_identifier?.replace(/\D/g, "") || client.full_name.toLowerCase().trim();
+
+      if (!groups[key]) {
+        groups[key] = { count: 0, phone: null, phone_contract: null };
       }
+
+      groups[key].count += 1;
+
+      // Accumulate the best available phone
+      if (!groups[key].phone && client.phone) groups[key].phone = client.phone;
+      if (!groups[key].phone_contract && client.phone_contract) groups[key].phone_contract = client.phone_contract;
     });
-    return counts;
+
+    return groups;
   }, [cases]);
 
   // Toggle mark for a case (caller only)
@@ -378,36 +392,44 @@ export default function Index() {
                       </div>
                     )}
 
-                    {client && (
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                        <User className="w-3 h-3" />
-                        <span className="truncate">{client.full_name}</span>
-                        {clientCaseCounts[c.client_id] > 1 && (
-                          <span className="flex-shrink-0 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[9px] font-bold border border-primary/20 uppercase animate-pulse">
-                            +{clientCaseCounts[c.client_id] - 1} Outros
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    {client && (() => {
+                      const clientKey = client.cpf_or_identifier?.replace(/\D/g, "") || client.full_name.toLowerCase().trim();
+                      const aggregate = clientAggregates[clientKey];
+                      const hasPhone = aggregate?.phone || aggregate?.phone_contract || client.phone || client.phone_contract;
 
-                    {c.process_number && (
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                        <Hash className="w-3 h-3" />
-                        <span className="font-mono">{formatProcessNumber(c.process_number)}</span>
-                      </div>
-                    )}
+                      return (
+                        <>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                            <User className="w-3 h-3" />
+                            <span className="truncate">{client.full_name}</span>
+                            {aggregate?.count > 1 && (
+                              <span className="flex-shrink-0 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[9px] font-bold border border-primary/20 uppercase animate-pulse">
+                                +{aggregate.count - 1} Outros
+                              </span>
+                            )}
+                          </div>
 
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Calendar className="w-3 h-3" />
-                      <span>{new Date(c.created_at).toLocaleDateString("pt-BR")}</span>
-                    </div>
+                          {c.process_number && (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                              <Hash className="w-3 h-3" />
+                              <span className="font-mono">{formatProcessNumber(c.process_number)}</span>
+                            </div>
+                          )}
 
-                    {client && !client.phone && !client.phone_contract && (
-                      <div className="flex items-center gap-1.5 text-[10px] text-destructive font-medium mt-2 bg-destructive/10 rounded-md px-2 py-1">
-                        <AlertTriangle className="w-3 h-3" />
-                        <span>Sem telefone registrado</span>
-                      </div>
-                    )}
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <Calendar className="w-3 h-3" />
+                            <span>{new Date(c.created_at).toLocaleDateString("pt-BR")}</span>
+                          </div>
+
+                          {!hasPhone && (
+                            <div className="flex items-center gap-1.5 text-[10px] text-destructive font-medium mt-2 bg-destructive/10 rounded-md px-2 py-1">
+                              <AlertTriangle className="w-3 h-3" />
+                              <span>Sem telefone registrado</span>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </Link>
 
                   {/* Caller: Mark as done button */}
