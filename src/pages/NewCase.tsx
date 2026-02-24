@@ -7,10 +7,12 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Upload, Loader2, Sparkles, FileText, CheckCircle2, AlertTriangle, Phone, Building2, Scale } from "lucide-react";
+import { ArrowLeft, Upload, Loader2, Sparkles, FileText, CheckCircle2, AlertTriangle, Phone, Building2, Scale, Files, X, CheckCircle, AlertCircle } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import * as pdfjsLib from "pdfjs-dist";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
 
 // Configure PDF.js worker - use dynamic version to prevent mismatches
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
@@ -58,6 +60,13 @@ export default function NewCase() {
   const [extracted, setExtracted] = useState<ExtractedData | null>(null);
   const [saving, setSaving] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [uploadMode, setUploadMode] = useState<"individual" | "bulk">("individual");
+
+  // Bulk Upload state
+  const [bulkFiles, setBulkFiles] = useState<File[]>([]);
+  const [processingBulk, setProcessingBulk] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(0);
+  const [bulkStatus, setBulkStatus] = useState<Record<string, { status: 'pending' | 'processing' | 'success' | 'error', error?: string }>>({});
 
   // Editable fields after extraction
   const [clientName, setClientName] = useState("");
@@ -255,97 +264,228 @@ export default function NewCase() {
 
     setSaving(true);
     try {
-      // 1. Create client
-      const { data: clientData, error: clientErr } = await supabase
-        .from("clients")
-        .insert({
-          full_name: clientName,
-          cpf_or_identifier: clientCpf || null,
-          phone: phoneDigits,
-          phone_contract: phoneContract.replace(/\D/g, "") || null,
-          user_id: user.id,
-        } as any)
-        .select()
-        .single();
-      if (clientErr) throw clientErr;
-
-      // 2. Create case
-      const parsedValue = caseValue ? parseFloat(caseValue.replace(/\./g, "").replace(",", ".")) : null;
-      const { data: caseResult, error: caseErr } = await supabase
-        .from("cases")
-        .insert({
-          client_id: clientData.id,
-          user_id: user.id,
-          case_title: caseTitle || `Caso — ${clientName}`,
-          defendant: defendant || null,
-          case_type: caseType || null,
-          court: court || null,
-          process_number: processNumber || null,
-          partner_law_firm_name: partnerFirm || null,
-          partner_lawyer_name: partnerLawyer || null,
-          case_value: parsedValue,
-          case_summary: extracted?.summary || null,
-          lawyer_type: lawyerType,
-          lawyer_id: lawyerType === "especifico" && selectedLawyerId ? selectedLawyerId : null,
-          company_context: getCompanyContext(
-            lawyerType,
-            lawyerType === "especifico"
-              ? availableLawyers.find((l) => l.id === selectedLawyerId)?.name
-              : undefined
-          ),
-        } as any)
-        .select()
-        .single();
-      if (caseErr) throw caseErr;
-
-      // 3. Upload files and save documents
-      if (pdfFile) {
-        const filePath = `${user.id}/${caseResult.id}/${pdfFile.name}`;
-        await supabase.storage.from("documents").upload(filePath, pdfFile);
-        const pdfText = await extractTextFromPdf(pdfFile).catch(() => "");
-
-        // Update extracted JSON with user-confirmed values
-        const finalJson = {
-          ...extracted,
-          client_name: clientName,
-          client_cpf: clientCpf,
-          defendant,
-          case_type: caseType,
-          court,
-          process_number: processNumber,
-          case_value: caseValue ? parseFloat(caseValue.replace(/\./g, "").replace(",", ".")) : 0,
-          principal_value: principalValue ? parseFloat(principalValue.replace(/\./g, "").replace(",", ".")) : 0,
-          lawyer_fee_percent: lawyerFeePercent ? parseFloat(lawyerFeePercent) : 0,
-          lawyer_fee_value: lawyerFeeValue ? parseFloat(lawyerFeeValue.replace(/\./g, "").replace(",", ".")) : 0,
-          client_net_value: clientNetValue ? parseFloat(clientNetValue.replace(/\./g, "").replace(",", ".")) : 0,
-        };
-
-        await supabase.from("documents").insert({
-          case_id: caseResult.id,
-          user_id: user.id,
-          doc_type: "petição inicial",
-          file_url: filePath,
-          extracted_text: pdfText || null,
-          extracted_json: finalJson as any,
-        });
-      }
-
-
-
-      // 4. Create conversation
-      await supabase.from("conversations").insert({
-        case_id: caseResult.id,
-        user_id: user.id,
-        channel: "WhatsApp",
+      await performSave({
+        clientName,
+        clientCpf,
+        phoneSource: phoneDigits,
+        phoneContractSource: phoneContract.replace(/\D/g, ""),
+        caseTitle,
+        defendant,
+        caseType,
+        court,
+        processNumber,
+        partnerFirm,
+        partnerLawyer,
+        caseValue,
+        principalValue,
+        lawyerFeePercent,
+        lawyerFeeValue,
+        clientNetValue,
+        lawyerType,
+        selectedLawyerId,
+        pdfFile,
+        extractedJson: extracted
       });
 
       toast.success("Caso criado com sucesso!");
-      navigate(`/case/${caseResult.id}`);
+      navigate(`/`); // Navigate back to list or the last created case if needed
     } catch (err: any) {
       console.error("Save error:", err);
       toast.error(err.message || "Erro ao salvar. Tente novamente.");
     }
     setSaving(false);
+  };
+
+  const performSave = async (data: {
+    clientName: string;
+    clientCpf: string;
+    phoneSource: string;
+    phoneContractSource: string;
+    caseTitle: string;
+    defendant: string;
+    caseType: string;
+    court: string;
+    processNumber: string;
+    partnerFirm: string;
+    partnerLawyer: string;
+    caseValue: string;
+    principalValue: string;
+    lawyerFeePercent: string;
+    lawyerFeeValue: string;
+    clientNetValue: string;
+    lawyerType: string;
+    selectedLawyerId: string;
+    pdfFile: File | null;
+    extractedJson: any;
+  }) => {
+    if (!user) throw new Error("Usuário não autenticado");
+
+    // 1. Create client
+    const { data: clientData, error: clientErr } = await supabase
+      .from("clients")
+      .insert({
+        full_name: data.clientName,
+        cpf_or_identifier: data.clientCpf || null,
+        phone: data.phoneSource,
+        phone_contract: data.phoneContractSource || null,
+        user_id: user.id,
+      } as any)
+      .select()
+      .single();
+    if (clientErr) throw clientErr;
+
+    // 2. Create case
+    const parsedValue = data.caseValue ? parseFloat(data.caseValue.replace(/\./g, "").replace(",", ".")) : null;
+    const { data: caseResult, error: caseErr } = await supabase
+      .from("cases")
+      .insert({
+        client_id: clientData.id,
+        user_id: user.id,
+        case_title: data.caseTitle || `Caso — ${data.clientName}`,
+        defendant: data.defendant || null,
+        case_type: data.caseType || null,
+        court: data.court || null,
+        process_number: data.processNumber || null,
+        partner_law_firm_name: data.partnerFirm || null,
+        partner_lawyer_name: data.partnerLawyer || null,
+        case_value: parsedValue,
+        case_summary: data.extractedJson?.summary || null,
+        lawyer_type: data.lawyerType,
+        lawyer_id: data.lawyerType === "especifico" && data.selectedLawyerId ? data.selectedLawyerId : null,
+        company_context: getCompanyContext(
+          data.lawyerType,
+          data.lawyerType === "especifico"
+            ? availableLawyers.find((l) => l.id === data.selectedLawyerId)?.name
+            : undefined
+        ),
+      } as any)
+      .select()
+      .single();
+    if (caseErr) throw caseErr;
+
+    // 3. Upload files and save documents
+    if (data.pdfFile) {
+      const filePath = `${user.id}/${caseResult.id}/${data.pdfFile.name}`;
+      await supabase.storage.from("documents").upload(filePath, data.pdfFile);
+      const pdfText = await extractTextFromPdf(data.pdfFile).catch(() => "");
+
+      // Update extracted JSON with user-confirmed values
+      const finalJson = {
+        ...data.extractedJson,
+        client_name: data.clientName,
+        client_cpf: data.clientCpf,
+        defendant: data.defendant,
+        case_type: data.caseType,
+        court: data.court,
+        process_number: data.processNumber,
+        case_value: data.caseValue ? parseFloat(data.caseValue.replace(/\./g, "").replace(",", ".")) : 0,
+        principal_value: data.principalValue ? parseFloat(data.principalValue.replace(/\./g, "").replace(",", ".")) : 0,
+        lawyer_fee_percent: data.lawyerFeePercent ? parseFloat(data.lawyerFeePercent) : 0,
+        lawyer_fee_value: data.lawyerFeeValue ? parseFloat(data.lawyerFeeValue.replace(/\./g, "").replace(",", ".")) : 0,
+        client_net_value: data.clientNetValue ? parseFloat(data.clientNetValue.replace(/\./g, "").replace(",", ".")) : 0,
+      };
+
+      await supabase.from("documents").insert({
+        case_id: caseResult.id,
+        user_id: user.id,
+        doc_type: "petição inicial",
+        file_url: filePath,
+        extracted_text: pdfText || null,
+        extracted_json: finalJson as any,
+      });
+    }
+
+    // 4. Create conversation
+    await supabase.from("conversations").insert({
+      case_id: caseResult.id,
+      user_id: user.id,
+      channel: "WhatsApp",
+    });
+
+    return caseResult;
+  };
+
+  const handleProcessBulk = async () => {
+    if (bulkFiles.length === 0) return;
+    if (lawyerType === "especifico" && !selectedLawyerId) {
+      toast.error("Selecione o advogado primeiro.");
+      return;
+    }
+
+    setProcessingBulk(true);
+    setBulkProgress(0);
+
+    const initialStatus: typeof bulkStatus = {};
+    bulkFiles.forEach(f => {
+      initialStatus[f.name] = { status: 'pending' };
+    });
+    setBulkStatus(initialStatus);
+
+    let completedCount = 0;
+
+    for (const file of bulkFiles) {
+      setBulkStatus(prev => ({
+        ...prev,
+        [file.name]: { status: 'processing' }
+      }));
+
+      try {
+        // 1. Extract
+        const pdfText = await extractTextFromPdf(file);
+        const result = await aiAnalyze({
+          petitionText: pdfText,
+          contractText: "",
+          contractType: "outros",
+        });
+
+        if (!result.success) throw new Error(result.error || "Erro na análise da IA");
+        const ext = result.extracted as any;
+
+        // 2. Format financials for individual save logic
+        const pNum = formatProcessNumber(ext.process_number || extractProcessNumberFromFilename(file.name) || "");
+
+        // 3. Save automatically
+        await performSave({
+          clientName: ext.client_name || "Desconhecido",
+          clientCpf: ext.client_cpf || "",
+          phoneSource: "",
+          phoneContractSource: (ext.phone_contract || ext.phone_found || ext.phone || "").replace(/\D/g, ""),
+          caseTitle: ext.case_type ? `${ext.case_type} — ${ext.client_name || ""}` : `Caso — ${file.name}`,
+          defendant: ext.defendant || "",
+          caseType: ext.case_type || "",
+          court: ext.court || "",
+          processNumber: pNum,
+          partnerFirm: ext.partner_law_firm || "",
+          partnerLawyer: ext.lawyers?.map((l: any) => `${l.name} (${l.oab})`).join(", ") || "",
+          caseValue: ext.case_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
+          principalValue: ext.principal_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
+          lawyerFeePercent: ext.lawyer_fee_percent?.toString() || "",
+          lawyerFeeValue: ext.lawyer_fee_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
+          clientNetValue: ext.client_net_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
+          lawyerType,
+          selectedLawyerId,
+          pdfFile: file,
+          extractedJson: ext
+        });
+
+        setBulkStatus(prev => ({
+          ...prev,
+          [file.name]: { status: 'success' }
+        }));
+      } catch (err: any) {
+        console.error(`Erro ao processar ${file.name}:`, err);
+        setBulkStatus(prev => ({
+          ...prev,
+          [file.name]: { status: 'error', error: err.message || "Erro desconhecido" }
+        }));
+      }
+
+      completedCount++;
+      setBulkProgress(Math.round((completedCount / bulkFiles.length) * 100));
+    }
+
+    setProcessingBulk(false);
+    toast.success("Processamento em massa finalizado!");
   };
 
   return (
@@ -360,8 +500,22 @@ export default function NewCase() {
           Envie a petição inicial para extração automática dos dados.
         </p>
 
-        {/* Step 1: Phone + PDF */}
-        {!extracted && (
+        {/* Upload Mode Tabs */}
+        {!extracted && !processingBulk && bulkProgress === 0 && (
+          <Tabs defaultValue="individual" className="w-full mb-6" onValueChange={(v) => setUploadMode(v as any)}>
+            <TabsList className="grid w-full grid-cols-2 bg-secondary/50">
+              <TabsTrigger value="individual" className="gap-2">
+                <FileText className="w-4 h-4" /> Individual
+              </TabsTrigger>
+              <TabsTrigger value="bulk" className="gap-2">
+                <Files className="w-4 h-4" /> Em Massa
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
+
+        {/* Step 1: Phone + PDF (Individual) */}
+        {!extracted && uploadMode === "individual" && (
           <div className="bg-card border border-border rounded-xl p-6 shadow-card animate-fade-in space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Petition Upload */}
@@ -391,9 +545,15 @@ export default function NewCase() {
                     }`}
                 >
                   {pdfFile ? (
-                    <div className="flex flex-col items-center gap-1 p-2 text-center animate-fade-in">
+                    <div className="flex flex-col items-center gap-1 p-2 text-center animate-fade-in relative group">
                       <CheckCircle2 className="w-5 h-5 text-primary" />
                       <span className="text-[11px] text-foreground font-medium truncate max-w-full">{pdfFile.name}</span>
+                      <button
+                        onClick={(e) => { e.preventDefault(); setPdfFile(null); }}
+                        className="absolute -top-1 -right-1 bg-destructive text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-1 animate-fade-in">
@@ -406,9 +566,7 @@ export default function NewCase() {
                     setPdfFile(file);
                     if (file) {
                       const extractedNumber = extractProcessNumberFromFilename(file.name);
-                      if (extractedNumber) {
-                        setProcessNumber(extractedNumber);
-                      }
+                      if (extractedNumber) setProcessNumber(extractedNumber);
                     }
                   }} />
                 </label>
@@ -431,7 +589,7 @@ export default function NewCase() {
                 {lawyerType === "especifico" && (
                   <div className="pt-1">
                     {availableLawyers.length === 0 ? (
-                      <p className="text-xs text-destructive">Nenhum advogado cadastrado. Vá em Configurações para cadastrar.</p>
+                      <p className="text-xs text-destructive">Nenhum advogado cadastrado.</p>
                     ) : (
                       <Select value={selectedLawyerId} onValueChange={setSelectedLawyerId}>
                         <SelectTrigger className="bg-secondary border-border text-xs">
@@ -468,6 +626,139 @@ export default function NewCase() {
                 </>
               )}
             </Button>
+          </div>
+        )}
+
+        {/* Step 1: Bulk Upload */}
+        {!extracted && uploadMode === "bulk" && !processingBulk && bulkProgress === 0 && (
+          <div className="bg-card border border-border rounded-xl p-6 shadow-card animate-fade-in space-y-5">
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <Files className="w-3 h-3" /> Várias Petições (Pasta de um mesmo Advogado)
+              </Label>
+              <label
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  const files = Array.from(e.dataTransfer.files).filter(f => f.type === "application/pdf");
+                  if (files.length > 0) setBulkFiles(prev => [...prev, ...files]);
+                }}
+                className={`flex flex-col items-center justify-center w-full min-h-[160px] border-2 border-dashed rounded-xl cursor-pointer transition-all duration-200 bg-secondary/50 ${isDragging ? "border-primary bg-primary/5 shadow-glow" : "border-border hover:border-primary/50"}`}
+              >
+                <div className="flex flex-col items-center gap-2 p-4 text-center">
+                  <Upload className={`w-8 h-8 ${isDragging ? "text-primary" : "text-muted-foreground"}`} />
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-foreground">Clique para selecionar ou arraste os arquivos</p>
+                    <p className="text-[10px] text-muted-foreground">Suba todos os documentos do mesmo advogado aqui.</p>
+                  </div>
+                </div>
+                <input type="file" accept=".pdf" multiple className="hidden" onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  setBulkFiles(prev => [...prev, ...files]);
+                }} />
+              </label>
+            </div>
+
+            {bulkFiles.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-foreground">{bulkFiles.length} arquivos selecionados</span>
+                  <button onClick={() => setBulkFiles([])} className="text-xs text-destructive hover:underline">Remover todos</button>
+                </div>
+                <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                  {bulkFiles.map((file, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-2 bg-secondary/30 rounded-lg border border-border group">
+                      <div className="flex items-center gap-2 overflow-hidden px-1">
+                        <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+                        <span className="text-[11px] truncate">{file.name}</span>
+                      </div>
+                      <button onClick={() => setBulkFiles(prev => prev.filter((_, i) => i !== idx))} className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Definir Advogado para todos os arquivos</Label>
+              <Select value={lawyerType} onValueChange={(v) => { setLawyerType(v as any); setSelectedLawyerId(""); }}>
+                <SelectTrigger className="bg-secondary border-border text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="geral">Geral — Paulo Tanaka (Parceiro)</SelectItem>
+                  <SelectItem value="especifico">Específico — Advogado do Caso</SelectItem>
+                </SelectContent>
+              </Select>
+              {lawyerType === "especifico" && (
+                <div className="pt-1">
+                  <Select value={selectedLawyerId} onValueChange={setSelectedLawyerId}>
+                    <SelectTrigger className="bg-secondary border-border text-xs">
+                      <SelectValue placeholder="Escolha o advogado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableLawyers.map((l) => (
+                        <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+
+            <Button
+              onClick={handleProcessBulk}
+              disabled={bulkFiles.length === 0 || processingBulk}
+              className="w-full bg-primary text-primary-foreground hover:opacity-90 font-semibold h-12"
+            >
+              <Files className="w-4 h-4 mr-2" /> Processar Fila ({bulkFiles.length})
+            </Button>
+          </div>
+        )}
+
+        {/* Bulk Progress UI */}
+        {(processingBulk || bulkProgress > 0) && uploadMode === "bulk" && !extracted && (
+          <div className="bg-card border border-border rounded-xl p-6 shadow-card animate-fade-in space-y-6">
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm font-medium">
+                <span>Processando arquivos...</span>
+                <span>{bulkProgress}%</span>
+              </div>
+              <Progress value={bulkProgress} className="h-2" />
+            </div>
+
+            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+              {bulkFiles.map((file, idx) => {
+                const state = bulkStatus[file.name] || { status: 'pending' };
+                return (
+                  <div key={idx} className="flex items-center justify-between p-3 rounded-lg border border-border bg-secondary/20">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <FileText className={`w-4 h-4 ${state.status === 'success' ? 'text-green-500' : state.status === 'error' ? 'text-red-500' : 'text-primary'}`} />
+                      <div className="flex flex-col overflow-hidden">
+                        <span className="text-xs font-medium truncate">{file.name}</span>
+                        {state.error && <span className="text-[10px] text-red-400 truncate">{state.error}</span>}
+                      </div>
+                    </div>
+                    <div>
+                      {state.status === 'pending' && <div className="w-4 h-4 border-2 border-muted border-t-transparent rounded-full" />}
+                      {state.status === 'processing' && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+                      {state.status === 'success' && <CheckCircle className="w-4 h-4 text-green-500" />}
+                      {state.status === 'error' && <AlertCircle className="w-4 h-4 text-red-500" />}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {!processingBulk && (
+              <Button onClick={() => { setBulkFiles([]); setBulkProgress(0); setBulkStatus({}); setUploadMode("individual"); navigate("/"); }} className="w-full">
+                Finalizar e Voltar para Início
+              </Button>
+            )}
           </div>
         )}
 
