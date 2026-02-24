@@ -152,6 +152,13 @@ Responda APENAS com JSON:
   "lawyers": [{"name": "...", "oab": "...", "role": "..."}],
   "partner_law_firm": "ESCRITORIO",
   "phone_contract": "DIGITOS_DO_CELULAR",
+  "client_details": {
+    "age": "IDADE",
+    "profession": "PROFISSÃO",
+    "income": "RENDA_MENSAL",
+    "vehicles": ["VEICULO_1", "VEICULO_2"],
+    "banks": ["BANCO_1", "BANCO_2"]
+  },
   "summary": "RESUMO_2_OU_3_FRASES_SOBRE_O_DIREITO_E_VALORES"
 }`;
 

@@ -102,12 +102,6 @@ export function DocumentsTab({ caseId, caseData, documents, onRefresh }: Props) 
             <Button onClick={() => exportAsOficio(caseData)} className="bg-gradient-gold text-primary-foreground hover:opacity-90 text-xs shadow-glow">
               <Stamp className="w-3.5 h-3.5 mr-2" /> Baixar Ofício
             </Button>
-            <Button onClick={() => exportAsPdf(caseData)} className="bg-gradient-gold text-primary-foreground hover:opacity-90 text-xs shadow-glow">
-              <FileDown className="w-3.5 h-3.5 mr-2" /> Baixar Ficha (PDF)
-            </Button>
-            <Button onClick={handleDownloadTxt} variant="outline" className="text-xs border-primary/20">
-              <FileTextIcon className="w-3.5 h-3.5 mr-2" /> Baixar Ficha (TXT)
-            </Button>
           </div>
         </div>
       )}

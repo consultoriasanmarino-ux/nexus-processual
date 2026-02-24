@@ -254,7 +254,7 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
 
       {/* Case info cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="bg-card border border-border rounded-xl p-4">
+        <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
           <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
             <User className="w-3.5 h-3.5" /> Cliente
           </div>
@@ -266,7 +266,7 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
             </div>
           )}
         </div>
-        <div className="bg-card border border-border rounded-xl p-4">
+        <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
           <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
             <Gavel className="w-3.5 h-3.5" /> Processo
           </div>
@@ -296,7 +296,7 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
           </div>
         </div>
         {(caseData.partner_law_firm_name || caseData.partner_lawyer_name) && (
-          <div className="bg-card border border-border rounded-xl p-4">
+          <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
               <Building2 className="w-3.5 h-3.5" /> Escritório Parceiro
             </div>
@@ -307,6 +307,40 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
           </div>
         )}
       </div>
+
+      {/* Dados Extras (Informações Complementares) */}
+      {extracted?.client_details && (
+        <div className="bg-card border border-border rounded-xl p-4 shadow-sm border-l-4 border-l-primary/30">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
+            <ClipboardList className="w-3.5 h-3.5" /> Informações Complementares (Extraído da IA)
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-4 gap-x-6">
+            <div>
+              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mb-0.5">Profissão / Renda</p>
+              <p className="text-sm font-medium">
+                {extracted.client_details.profession || "N/A"}
+                {extracted.client_details.income && ` - R$ ${extracted.client_details.income}`}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mb-0.5">Idade</p>
+              <p className="text-sm font-medium">{extracted.client_details.age || "N/A"}</p>
+            </div>
+            {extracted.client_details.vehicles?.length > 0 && (
+              <div>
+                <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mb-0.5">Veículos</p>
+                <p className="text-sm font-medium">{extracted.client_details.vehicles.join(", ")}</p>
+              </div>
+            )}
+            {extracted.client_details.banks?.length > 0 && (
+              <div className="sm:col-span-2">
+                <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mb-0.5">Bancos Relacionados</p>
+                <p className="text-sm font-medium">{extracted.client_details.banks.join(", ")}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* AI Summary */}
       {!isCaller && (
