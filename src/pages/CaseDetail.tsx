@@ -195,7 +195,7 @@ export default function CaseDetail() {
             <CaseSummaryTab caseData={caseData} documents={documents} aiOutputs={aiOutputs} onRefresh={fetchAll} />
           </TabsContent>
           <TabsContent value="documents">
-            <DocumentsTab caseId={caseData.id} documents={documents} onRefresh={fetchAll} />
+            <DocumentsTab caseId={caseData.id} caseData={caseData} documents={documents} onRefresh={fetchAll} />
           </TabsContent>
           <TabsContent value="conversations">
             <ConversationsTab
