@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { aiAnalyze } from "@/lib/gemini";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -6,7 +7,7 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Upload, Loader2, Sparkles, FileText, CheckCircle2, AlertTriangle, Phone, Building2 } from "lucide-react";
+import { ArrowLeft, Upload, Loader2, Sparkles, FileText, CheckCircle2, AlertTriangle, Phone, Building2, Scale } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import * as pdfjsLib from "pdfjs-dist";
@@ -21,7 +22,9 @@ function formatCurrency(value: string): string {
   return num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-import { formatPhone, formatCPF } from "@/lib/utils";
+import { formatPhone, formatCPF, formatProcessNumber, extractProcessNumberFromFilename } from "@/lib/utils";
+import { getCompanyContext } from "@/lib/constants";
+import type { Lawyer } from "@/lib/types";
 
 interface ExtractedData {
   client_name: string;
@@ -30,8 +33,11 @@ interface ExtractedData {
   case_type: string;
   court: string;
   process_number: string;
-  distribution_date: string;
-  case_value: string;
+  case_value: number;
+  principal_value?: number;
+  lawyer_fee_percent?: number;
+  lawyer_fee_value?: number;
+  client_net_value?: number;
   lawyers: { name: string; oab: string; role: string }[];
   partner_law_firm: string;
   summary: string;
@@ -47,12 +53,11 @@ export default function NewCase() {
 
   const [phone, setPhone] = useState("");
   const [phoneContract, setPhoneContract] = useState("");
-  const [contractType, setContractType] = useState("omni");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [contractFile, setContractFile] = useState<File | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [extracted, setExtracted] = useState<ExtractedData | null>(null);
   const [saving, setSaving] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Editable fields after extraction
   const [clientName, setClientName] = useState("");
@@ -62,18 +67,53 @@ export default function NewCase() {
   const [caseTitle, setCaseTitle] = useState("");
   const [court, setCourt] = useState("");
   const [processNumber, setProcessNumber] = useState("");
-  const [distributionDate, setDistributionDate] = useState("");
   const [partnerFirm, setPartnerFirm] = useState("");
   const [partnerLawyer, setPartnerLawyer] = useState("");
   const [caseValue, setCaseValue] = useState("");
+  const [principalValue, setPrincipalValue] = useState("");
+  const [lawyerFeePercent, setLawyerFeePercent] = useState("");
+  const [lawyerFeeValue, setLawyerFeeValue] = useState("");
+  const [clientNetValue, setClientNetValue] = useState("");
   const [isDanosMorais, setIsDanosMorais] = useState(false);
+
+  const updateFinancials = (p?: string, pct?: string, f?: string) => {
+    const pVal = p !== undefined ? parseFloat(p.replace(/\./g, "").replace(",", ".")) : parseFloat(principalValue.replace(/\./g, "").replace(",", "."));
+    const pctVal = pct !== undefined ? parseFloat(pct) : parseFloat(lawyerFeePercent);
+
+    if (!isNaN(pVal)) {
+      if (!isNaN(pctVal)) {
+        const fee = pVal * (pctVal / 100);
+        const net = pVal - fee;
+        setLawyerFeeValue(fee.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+        setClientNetValue(net.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      } else if (f !== undefined) {
+        const fVal = parseFloat(f.replace(/\./g, "").replace(",", "."));
+        if (!isNaN(fVal)) {
+          setClientNetValue((pVal - fVal).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+        }
+      }
+    }
+  };
+
+  // Lawyer selection
+  const [lawyerType, setLawyerType] = useState<"geral" | "especifico">("geral");
+  const [selectedLawyerId, setSelectedLawyerId] = useState("");
+  const [availableLawyers, setAvailableLawyers] = useState<Lawyer[]>([]);
+
+  useEffect(() => {
+    supabase
+      .from("lawyers" as any)
+      .select("*")
+      .order("name")
+      .then(({ data }) => setAvailableLawyers((data as any as Lawyer[]) ?? []));
+  }, []);
 
   const extractTextFromPdf = async (file: File): Promise<string> => {
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     let fullText = "";
 
-    for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
+    for (let i = 1; i <= Math.min(pdf.numPages, 40); i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
 
@@ -115,36 +155,25 @@ export default function NewCase() {
   };
 
   const handleProcessPdf = async () => {
-    if (!pdfFile && !contractFile) {
-      toast.error("Selecione pelo menos um arquivo.");
+    if (!pdfFile) {
+      toast.error("Selecione a petição inicial.");
       return;
     }
 
     setExtracting(true);
     try {
-      const pdfText = pdfFile ? await extractTextFromPdf(pdfFile) : "";
-      let contractText = contractFile ? await extractTextFromPdf(contractFile) : "";
-      let contractImages: string[] = [];
+      const pdfText = await extractTextFromPdf(pdfFile);
 
-      // If contract text extraction is poor (scanned PDF), render pages as images for Gemini OCR
-      if (contractFile && contractText.replace(/\s+/g, "").length < 50) {
-        console.log("Contract text extraction poor, using image fallback for OCR");
-        contractImages = await renderPdfPagesToImages(contractFile, 3);
-      }
-
-      const { data, error } = await supabase.functions.invoke("ai-analyze", {
-        body: {
-          petitionText: pdfText,
-          contractText: contractText,
-          contractType: contractType,
-          phoneProvided: phone,
-          contractImages: contractImages.length > 0 ? contractImages : undefined,
-        },
+      const result = await aiAnalyze({
+        petitionText: pdfText,
+        contractText: "",
+        contractType: "outros",
+        phoneProvided: phone,
       });
 
-      if (error) throw error;
+      if (!result.success || result.error) throw new Error(result.error || "Resposta inesperada da IA.");
 
-      const ext = data?.extracted as any;
+      const ext = result.extracted as any;
       if (!ext) throw new Error("Resposta inesperada da IA.");
 
       setExtracted(ext as ExtractedData);
@@ -157,15 +186,26 @@ export default function NewCase() {
       setCaseType(ext.case_type || "");
       setCaseTitle(ext.case_type ? `${ext.case_type} — ${ext.client_name || ""}` : "");
       setCourt(ext.court || "");
-      setProcessNumber(ext.process_number || "");
-      setDistributionDate(ext.distribution_date || "");
+      // Only overwrite if AI found a process number; keep filename-extracted value otherwise
+      if (ext.process_number) {
+        setProcessNumber(formatProcessNumber(ext.process_number));
+      }
       setPartnerFirm(ext.partner_law_firm || "");
 
-      if (ext.case_value) {
-        const numVal = parseFloat(String(ext.case_value).replace(/[^\d.]/g, ""));
-        if (!isNaN(numVal)) {
-          setCaseValue(numVal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-        }
+      if (ext.case_value && ext.case_value > 0) {
+        setCaseValue(ext.case_value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      }
+      if (ext.principal_value && ext.principal_value > 0) {
+        setPrincipalValue(ext.principal_value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      }
+      if (ext.lawyer_fee_percent && ext.lawyer_fee_percent > 0) {
+        setLawyerFeePercent(ext.lawyer_fee_percent.toString());
+      }
+      if (ext.lawyer_fee_value && ext.lawyer_fee_value > 0) {
+        setLawyerFeeValue(ext.lawyer_fee_value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      }
+      if (ext.client_net_value && ext.client_net_value > 0) {
+        setClientNetValue(ext.client_net_value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
       }
 
       if (ext.lawyers?.length > 0) {
@@ -241,11 +281,18 @@ export default function NewCase() {
           case_type: caseType || null,
           court: court || null,
           process_number: processNumber || null,
-          distribution_date: distributionDate || null,
           partner_law_firm_name: partnerFirm || null,
           partner_lawyer_name: partnerLawyer || null,
           case_value: parsedValue,
           case_summary: extracted?.summary || null,
+          lawyer_type: lawyerType,
+          lawyer_id: lawyerType === "especifico" && selectedLawyerId ? selectedLawyerId : null,
+          company_context: getCompanyContext(
+            lawyerType,
+            lawyerType === "especifico"
+              ? availableLawyers.find((l) => l.id === selectedLawyerId)?.name
+              : undefined
+          ),
         } as any)
         .select()
         .single();
@@ -256,28 +303,34 @@ export default function NewCase() {
         const filePath = `${user.id}/${caseResult.id}/${pdfFile.name}`;
         await supabase.storage.from("documents").upload(filePath, pdfFile);
         const pdfText = await extractTextFromPdf(pdfFile).catch(() => "");
+
+        // Update extracted JSON with user-confirmed values
+        const finalJson = {
+          ...extracted,
+          client_name: clientName,
+          client_cpf: clientCpf,
+          defendant,
+          case_type: caseType,
+          court,
+          process_number: processNumber,
+          case_value: caseValue ? parseFloat(caseValue.replace(/\./g, "").replace(",", ".")) : 0,
+          principal_value: principalValue ? parseFloat(principalValue.replace(/\./g, "").replace(",", ".")) : 0,
+          lawyer_fee_percent: lawyerFeePercent ? parseFloat(lawyerFeePercent) : 0,
+          lawyer_fee_value: lawyerFeeValue ? parseFloat(lawyerFeeValue.replace(/\./g, "").replace(",", ".")) : 0,
+          client_net_value: clientNetValue ? parseFloat(clientNetValue.replace(/\./g, "").replace(",", ".")) : 0,
+        };
+
         await supabase.from("documents").insert({
           case_id: caseResult.id,
           user_id: user.id,
           doc_type: "petição inicial",
           file_url: filePath,
           extracted_text: pdfText || null,
-          extracted_json: extracted ? (extracted as any) : null,
+          extracted_json: finalJson as any,
         });
       }
 
-      if (contractFile) {
-        const filePath = `${user.id}/${caseResult.id}/${contractFile.name}`;
-        await supabase.storage.from("documents").upload(filePath, contractFile);
-        const contractText = await extractTextFromPdf(contractFile).catch(() => "");
-        await supabase.from("documents").insert({
-          case_id: caseResult.id,
-          user_id: user.id,
-          doc_type: "contrato",
-          file_url: filePath,
-          extracted_text: contractText || null,
-        });
-      }
+
 
       // 4. Create conversation
       await supabase.from("conversations").insert({
@@ -304,80 +357,109 @@ export default function NewCase() {
 
         <h1 className="text-2xl font-bold mb-1">Novo Caso</h1>
         <p className="text-sm text-muted-foreground mb-6">
-          Envie a petição e o contrato para extração automática dos dados.
+          Envie a petição inicial para extração automática dos dados.
         </p>
 
         {/* Step 1: Phone + PDF */}
         {!extracted && (
           <div className="bg-card border border-border rounded-xl p-6 shadow-card animate-fade-in space-y-5">
-            <div className="grid grid-cols-1 gap-4">
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Building2 className="w-3 h-3" /> Tipo de Contrato
-                </Label>
-                <Select value={contractType} onValueChange={setContractType}>
-                  <SelectTrigger className="bg-secondary border-border text-xs">
-                    <SelectValue placeholder="Selecione o tipo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="omni">Omni Financiamentos</SelectItem>
-                    <SelectItem value="outros">Outros / Desconhecido</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Petition Upload */}
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
                   <FileText className="w-3 h-3" /> Petição Inicial (PDF) *
                 </Label>
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/50 transition-colors bg-secondary/50">
+                <label
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file && file.type === "application/pdf") {
+                      setPdfFile(file);
+                      const extractedNumber = extractProcessNumberFromFilename(file.name);
+                      if (extractedNumber) setProcessNumber(extractedNumber);
+                    } else if (file) {
+                      toast.error("Por favor, envie apenas arquivos PDF.");
+                    }
+                  }}
+                  className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-xl cursor-pointer transition-all duration-200 bg-secondary/50 ${isDragging ? "border-primary bg-primary/5 shadow-glow" : "border-border hover:border-primary/50"
+                    }`}
+                >
                   {pdfFile ? (
-                    <div className="flex flex-col items-center gap-1 p-2 text-center">
+                    <div className="flex flex-col items-center gap-1 p-2 text-center animate-fade-in">
                       <CheckCircle2 className="w-5 h-5 text-primary" />
                       <span className="text-[11px] text-foreground font-medium truncate max-w-full">{pdfFile.name}</span>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center gap-1">
-                      <Upload className="w-5 h-5 text-muted-foreground" />
-                      <span className="text-[10px] text-muted-foreground">Petição Judicial</span>
+                    <div className="flex flex-col items-center gap-1 animate-fade-in">
+                      <Upload className={`w-5 h-5 ${isDragging ? "text-primary" : "text-muted-foreground"}`} />
+                      <span className="text-[10px] text-muted-foreground">Arraste aqui ou clique para buscar</span>
                     </div>
                   )}
-                  <input type="file" accept=".pdf" className="hidden" onChange={(e) => setPdfFile(e.target.files?.[0] ?? null)} />
+                  <input type="file" accept=".pdf" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    setPdfFile(file);
+                    if (file) {
+                      const extractedNumber = extractProcessNumberFromFilename(file.name);
+                      if (extractedNumber) {
+                        setProcessNumber(extractedNumber);
+                      }
+                    }
+                  }} />
                 </label>
               </div>
 
+              {/* Lawyer Selector */}
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <FileText className="w-3 h-3" /> Contrato/CCB (PDF)
+                  <Scale className="w-3 h-3" /> Advogado do Caso
                 </Label>
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/50 transition-colors bg-secondary/50">
-                  {contractFile ? (
-                    <div className="flex flex-col items-center gap-1 p-2 text-center">
-                      <CheckCircle2 className="w-5 h-5 text-primary" />
-                      <span className="text-[11px] text-foreground font-medium truncate max-w-full">{contractFile.name}</span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-1">
-                      <Upload className="w-5 h-5 text-muted-foreground" />
-                      <span className="text-[10px] text-muted-foreground">Contrato de Financiamento</span>
-                    </div>
-                  )}
-                  <input type="file" accept=".pdf" className="hidden" onChange={(e) => setContractFile(e.target.files?.[0] ?? null)} />
-                </label>
+                <Select value={lawyerType} onValueChange={(v) => { setLawyerType(v as any); setSelectedLawyerId(""); }}>
+                  <SelectTrigger className="bg-secondary border-border text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="geral">Geral — Paulo Tanaka (Parceiro)</SelectItem>
+                    <SelectItem value="especifico">Específico — Advogado do Caso</SelectItem>
+                  </SelectContent>
+                </Select>
+                {lawyerType === "especifico" && (
+                  <div className="pt-1">
+                    {availableLawyers.length === 0 ? (
+                      <p className="text-xs text-destructive">Nenhum advogado cadastrado. Vá em Configurações para cadastrar.</p>
+                    ) : (
+                      <Select value={selectedLawyerId} onValueChange={setSelectedLawyerId}>
+                        <SelectTrigger className="bg-secondary border-border text-xs">
+                          <SelectValue placeholder="Escolha o advogado" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableLawyers.map((l) => (
+                            <SelectItem key={l.id} value={l.id}>
+                              {l.name}{l.oab ? ` (OAB: ${l.oab})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
             <Button
               onClick={handleProcessPdf}
-              disabled={(!pdfFile && !contractFile) || extracting}
+              disabled={!pdfFile || extracting}
               className="w-full bg-gradient-gold text-primary-foreground hover:opacity-90 font-semibold"
             >
               {extracting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                  Analisando documentos...
+                  Analisando petição...
                 </>
               ) : (
                 <>
@@ -482,27 +564,98 @@ export default function NewCase() {
                 <Input value={processNumber} onChange={(e) => setProcessNumber(e.target.value)} className="bg-secondary border-border" />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Data de distribuição</Label>
-                <Input type="date" value={distributionDate} onChange={(e) => setDistributionDate(e.target.value)} className="bg-secondary border-border" />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Valor da causa (R$)</Label>
+                <Label className="text-xs text-muted-foreground">Valor Reclamado / Ofício (R$)</Label>
                 <div className="flex items-center gap-3">
                   <Input
-                    value={isDanosMorais ? "10.000,00" : caseValue}
+                    value={caseValue}
                     onChange={(e) => setCaseValue(formatCurrency(e.target.value))}
                     placeholder="0,00"
-                    disabled={isDanosMorais}
                     className="bg-secondary border-border flex-1"
                   />
-                  <label className="flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
-                    <Checkbox checked={isDanosMorais} onCheckedChange={(checked) => {
-                      setIsDanosMorais(!!checked);
-                      if (checked) setCaseValue("10.000,00");
-                    }} />
-                    <span className="text-xs text-muted-foreground">Danos Morais</span>
-                  </label>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Principal (R$)</Label>
+                <Input
+                  value={principalValue}
+                  onChange={(e) => {
+                    const val = formatCurrency(e.target.value);
+                    setPrincipalValue(val);
+                    updateFinancials(val);
+                  }}
+                  placeholder="0,00"
+                  className="bg-secondary border-border"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Honorários (%)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={lawyerFeePercent}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^\d]/g, "");
+                      setLawyerFeePercent(val);
+                      updateFinancials(undefined, val);
+                    }}
+                    placeholder="0"
+                    className="bg-secondary border-border"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Honorários Valor (R$)</Label>
+                <Input
+                  value={lawyerFeeValue}
+                  onChange={(e) => {
+                    const val = formatCurrency(e.target.value);
+                    setLawyerFeeValue(val);
+                    updateFinancials(undefined, undefined, val);
+                  }}
+                  placeholder="0,00"
+                  className="bg-secondary border-border"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Líquido Cliente (R$)</Label>
+                <Input
+                  value={clientNetValue}
+                  onChange={(e) => setClientNetValue(formatCurrency(e.target.value))}
+                  placeholder="0,00"
+                  className="bg-secondary border-border font-bold text-primary"
+                />
+              </div>
+
+              <div className="space-y-2 flex items-end">
+                <label className="flex items-center gap-1.5 cursor-pointer whitespace-nowrap mb-3">
+                  <Checkbox checked={isDanosMorais} onCheckedChange={(checked) => {
+                    setIsDanosMorais(!!checked);
+                    if (checked) {
+                      setCaseValue("10.000,00");
+                      setPrincipalValue("10.000,00");
+                    }
+                  }} />
+                  <span className="text-xs text-muted-foreground">Danos Morais Padrão</span>
+                </label>
+              </div>
+
+              {/* Lawyer info (selected in Step 1) */}
+              <div className="sm:col-span-2 rounded-lg p-3 bg-secondary/30 border border-border">
+                <Label className="text-[10px] flex items-center gap-1.5 font-semibold text-muted-foreground uppercase mb-1">
+                  <Scale className="w-3 h-3" /> Advogado Selecionado
+                </Label>
+                <p className="text-sm font-medium">
+                  {lawyerType === "especifico" && selectedLawyerId
+                    ? (() => {
+                      const l = availableLawyers.find((l) => l.id === selectedLawyerId);
+                      return l ? `${l.name}${l.oab ? ` (OAB: ${l.oab})` : ""}` : "Específico";
+                    })()
+                    : "Geral — Paulo Tanaka (Parceiro)"
+                  }
+                </p>
               </div>
             </div>
 
@@ -522,6 +675,6 @@ export default function NewCase() {
           </div>
         )}
       </div>
-    </Layout>
+    </Layout >
   );
 }

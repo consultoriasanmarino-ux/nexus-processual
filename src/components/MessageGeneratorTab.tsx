@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { aiMessage } from "@/lib/gemini";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -41,26 +42,24 @@ export function MessageGeneratorTab({ caseData, documents, aiOutputs, onRefresh 
     setGenerating(true);
     setResults([]);
     try {
-      const { data, error } = await supabase.functions.invoke("ai-message", {
-        body: {
-          action,
-          caseId: caseData.id,
-          caseTitle: caseData.case_title,
-          distributionDate: caseData.distribution_date,
-          defendant: caseData.defendant,
-          caseType: caseData.case_type,
-          court: caseData.court,
-          partnerFirm: caseData.partner_law_firm_name,
-          partnerLawyer: caseData.partner_lawyer_name,
-          caseValue: (caseData as any).case_value,
-          context,
-          objective,
-          tone,
-          formality,
-          existingOutputs: aiOutputs.slice(0, 3).map((o) => o.content),
-        },
+      const data = await aiMessage({
+        action,
+        caseId: caseData.id,
+        caseTitle: caseData.case_title,
+        defendant: caseData.defendant,
+        caseType: caseData.case_type,
+        court: caseData.court,
+        partnerFirm: caseData.partner_law_firm_name,
+        partnerLawyer: caseData.partner_lawyer_name,
+        caseValue: (caseData as any).case_value,
+        companyContext: caseData.company_context || undefined,
+        context,
+        objective,
+        tone,
+        formality,
+        existingOutputs: aiOutputs.slice(0, 3).map((o) => o.content),
+        userQuery: objective,
       });
-      if (error) throw error;
 
       if (data?.error) {
         toast.error(`Erro na Geração: ${data.error}`);

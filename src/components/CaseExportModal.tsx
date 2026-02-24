@@ -17,8 +17,14 @@ function toTitleCase(str: string) {
 
 function buildExportText(caseData: Case): string {
   const client = (caseData as any).clients;
+  const financialData = (caseData as any).documents?.[0]?.extracted_json || {};
+
   const caseValue = caseData.case_value ? Number(caseData.case_value) : null;
-  const paymentValue = caseValue ? caseValue / 2 : null;
+  const principalValue = financialData.principal_value ? Number(financialData.principal_value) : caseValue;
+  const feeValue = financialData.lawyer_fee_value ? Number(financialData.lawyer_fee_value) : null;
+  const netValue = financialData.client_net_value ? Number(financialData.client_net_value) : null;
+  const feePercent = financialData.lawyer_fee_percent ? Number(financialData.lawyer_fee_percent) : null;
+
   const lines: string[] = [];
 
   if (caseData.case_summary) {
@@ -28,16 +34,18 @@ function buildExportText(caseData: Case): string {
     lines.push("");
   }
 
-  if (caseData.distribution_date) {
-    lines.push(`Data de Autuação: ${new Date(caseData.distribution_date + "T12:00:00").toLocaleDateString("pt-BR")}`);
+  lines.push("💰 VALORES DO PROCESSO");
+  lines.push("───────────────────────────────────────");
+  if (principalValue !== null) {
+    lines.push(`Valor Principal: R$ ${principalValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
   }
-  lines.push("");
-
-  if (caseValue !== null) {
-    lines.push(`Valor da Causa: R$ ${caseValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
+  if (feeValue !== null) {
+    lines.push(`Honorários (${feePercent}%): R$ ${feeValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
   }
-  if (paymentValue !== null) {
-    lines.push(`Valor de pagamento: R$ ${paymentValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
+  if (netValue !== null) {
+    lines.push(`Valor Líquido Cliente: R$ ${netValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
+  } else if (caseValue !== null) {
+    lines.push(`Valor do Caso: R$ ${caseValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
   }
   lines.push("");
 

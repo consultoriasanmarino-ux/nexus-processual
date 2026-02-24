@@ -48,3 +48,22 @@ export function formatCurrency(value: number | string | null | undefined): strin
   if (isNaN(num)) return "";
   return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
+
+export function formatProcessNumber(value: string | null | undefined): string {
+  if (!value) return "";
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 20) {
+    // NNNNNNN-DD.YYYY.J.TR.OOOO
+    return digits.replace(/(\d{7})(\d{2})(\d{4})(\d{1})(\d{2})(\d{4})/, "$1-$2.$3.$4.$5.$6");
+  }
+  return value;
+}
+
+export function extractProcessNumberFromFilename(filename: string): string | null {
+  // Look for 20 consecutive digits in the filename
+  const match = filename.match(/\d{20}/);
+  if (match) {
+    return formatProcessNumber(match[0]);
+  }
+  return null;
+}

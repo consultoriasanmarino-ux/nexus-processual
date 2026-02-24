@@ -11,6 +11,7 @@ import CaseDetail from "./pages/CaseDetail";
 import Clients from "./pages/Clients";
 import ClientDetail from "./pages/ClientDetail";
 import NotFound from "./pages/NotFound";
+import Settings from "./pages/Settings";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,20 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
   if (!user) return <Navigate to="/auth" replace />;
+  return <>{children}</>;
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading, isAdmin } = useAuth();
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/auth" replace />;
+  if (!isAdmin) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -43,10 +58,11 @@ const App = () => (
         <Routes>
           <Route path="/auth" element={<AuthRoute><Auth /></AuthRoute>} />
           <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-          <Route path="/new-case" element={<ProtectedRoute><NewCase /></ProtectedRoute>} />
+          <Route path="/new-case" element={<AdminRoute><NewCase /></AdminRoute>} />
           <Route path="/case/:id" element={<ProtectedRoute><CaseDetail /></ProtectedRoute>} />
-          <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
-          <Route path="/client/:id" element={<ProtectedRoute><ClientDetail /></ProtectedRoute>} />
+          <Route path="/clients" element={<AdminRoute><Clients /></AdminRoute>} />
+          <Route path="/client/:id" element={<AdminRoute><ClientDetail /></AdminRoute>} />
+          <Route path="/settings" element={<AdminRoute><Settings /></AdminRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

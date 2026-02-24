@@ -5,18 +5,20 @@ import { useAuth } from "@/hooks/useAuth";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, FileText, MessageSquare, Sparkles, ClipboardList } from "lucide-react";
+import { ArrowLeft, FileText, MessageSquare, Sparkles, ClipboardList, Edit2, Check, X } from "lucide-react";
+import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
 import { getStatusInfo, type Case, type Document, type Conversation, type Message, type AiOutput } from "@/lib/types";
 import { CaseSummaryTab } from "@/components/CaseSummaryTab";
 import { DocumentsTab } from "@/components/DocumentsTab";
 import { ConversationsTab } from "@/components/ConversationsTab";
 import { MessageGeneratorTab } from "@/components/MessageGeneratorTab";
 import { CaseExportModal } from "@/components/CaseExportModal";
-import { formatPhone } from "@/lib/utils";
+import { formatPhone, formatProcessNumber } from "@/lib/utils";
 
 export default function CaseDetail() {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
 
   const [caseData, setCaseData] = useState<Case | null>(null);
@@ -25,6 +27,9 @@ export default function CaseDetail() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [aiOutputs, setAiOutputs] = useState<AiOutput[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingProcessNumber, setEditingProcessNumber] = useState(false);
+  const [tempProcessNumber, setTempProcessNumber] = useState("");
+  const [savingProcessNumber, setSavingProcessNumber] = useState(false);
 
   useEffect(() => {
     if (user && id) fetchAll();
@@ -39,6 +44,7 @@ export default function CaseDetail() {
     ]);
 
     setCaseData(cRes.data as any);
+    setTempProcessNumber(cRes.data?.process_number || "");
     setDocuments((dRes.data as any[]) ?? []);
     setConversations((cvRes.data as any[]) ?? []);
     setAiOutputs((aoRes.data as any[]) ?? []);
@@ -54,6 +60,24 @@ export default function CaseDetail() {
       setMessages((msgs as any[]) ?? []);
     }
     setLoading(false);
+  };
+
+  const handleUpdateProcessNumber = async () => {
+    if (!id || !caseData) return;
+    setSavingProcessNumber(true);
+    const { error } = await supabase
+      .from("cases")
+      .update({ process_number: tempProcessNumber })
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Erro ao atualizar número do processo.");
+    } else {
+      setCaseData({ ...caseData, process_number: tempProcessNumber });
+      setEditingProcessNumber(false);
+      toast.success("Número do processo atualizado!");
+    }
+    setSavingProcessNumber(false);
   };
 
   if (loading) {
@@ -119,8 +143,30 @@ export default function CaseDetail() {
                   )}
                 </div>
               )}
-              {caseData.process_number && (
-                <p className="text-xs text-muted-foreground font-mono mt-1">Processo: {caseData.process_number}</p>
+              {isAdmin && editingProcessNumber ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <Input
+                    value={tempProcessNumber}
+                    onChange={(e) => setTempProcessNumber(formatProcessNumber(e.target.value))}
+                    className="h-7 text-xs font-mono bg-secondary border-border max-w-[240px]"
+                    autoFocus
+                  />
+                  <Button size="icon" variant="ghost" className="h-7 w-7 text-primary" onClick={handleUpdateProcessNumber} disabled={savingProcessNumber}>
+                    <Check className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground" onClick={() => { setEditingProcessNumber(false); setTempProcessNumber(caseData.process_number || ""); }}>
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 group/process mt-1">
+                  <p className="text-xs text-muted-foreground font-mono">Processo: {formatProcessNumber(caseData.process_number) || "Não informado"}</p>
+                  {isAdmin && (
+                    <button onClick={() => setEditingProcessNumber(true)} className="p-1 opacity-0 group-hover/process:opacity-100 hover:text-primary transition-all">
+                      <Edit2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               )}
             </div>
             <div className="flex items-center gap-2">

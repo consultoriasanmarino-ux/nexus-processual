@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import type { Case, Client } from "@/lib/types";
 import { supabase } from "@/integrations/supabase/client";
 import jsPDF from "jspdf";
-import { formatPhone, formatCPF } from "@/lib/utils";
+import { formatPhone, formatCPF, formatProcessNumber } from "@/lib/utils";
 
 interface Props {
   caseData: Case;
@@ -94,7 +94,7 @@ function buildExportContent(caseData: Case): ExportContent {
     banks: client?.banks || "Não informado",
     defendant: caseData.defendant || "Não informado",
     court: caseData.court || "Não informado",
-    processNumber: caseData.process_number || "Não informado",
+    processNumber: formatProcessNumber(caseData.process_number) || "Não informado",
     caseType: caseData.case_type || "Não informado",
     summary: caseData.case_summary || "Sem resumo disponível.",
     initialMessage: buildInitialMessage(caseData),
@@ -333,13 +333,38 @@ export async function exportAsOficio(caseData: Case) {
   const centerX = pageWidth / 2;
   const margin = 20;
 
+  // Fetch detailed data from document if available
+  let financialData: any = null;
+  try {
+    const { data: docData } = await supabase
+      .from("documents")
+      .select("extracted_json")
+      .eq("case_id", caseData.id)
+      .eq("doc_type", "petição inicial")
+      .maybeSingle();
+    financialData = docData?.extracted_json;
+  } catch (e) {
+    console.warn("Could not fetch financial details for ofício", e);
+  }
+
   // Dados dinâmicos
   const clientName = client?.full_name ? client.full_name.toUpperCase() : "NÃO INFORMADO";
   const clientCpf = client?.cpf_or_identifier ? formatCPF(client.cpf_or_identifier) : "NÃO INFORMADO";
-  const processNumber = caseData.process_number || "NÃO INFORMADO";
+  const processNumber = formatProcessNumber(caseData.process_number) || "NÃO INFORMADO";
   const defendant = caseData.defendant ? caseData.defendant.toUpperCase() : "NÃO INFORMADO";
-  const caseValue = caseData.case_value ? Number(caseData.case_value) : 0;
-  const formattedValue = caseValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Use detailed values and fallback to case_value
+  const totalValue = financialData?.case_value || Number(caseData.case_value) || 0;
+  const principalValue = financialData?.principal_value || totalValue;
+  const feePercent = financialData?.lawyer_fee_percent || 0;
+  const feeValue = financialData?.lawyer_fee_value || 0;
+  const netValue = financialData?.client_net_value || principalValue;
+
+  const formattedTotal = totalValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formattedPrincipal = principalValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formattedFee = feeValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formattedNet = netValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   const today = new Date();
 
   try {
@@ -381,26 +406,26 @@ export async function exportAsOficio(caseData: Case) {
     y += 4;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
-    doc.text("ALVARA DE LIBERAÇÃO DE PAGAMENTO Nº: 0284748/202", centerX, y, { align: "center" });
+    doc.text("ALVARÁ DE LIBERAÇÃO DE VALORES Nº: " + (Math.floor(Math.random() * 900000) + 100000) + "/2026", centerX, y, { align: "center" });
 
     y += 4;
-    doc.text("AÇÃO: EXECUÇÃO DE SENTENÇA CNJ LEI.13.105", centerX, y, { align: "center" });
+    doc.text("AÇÃO: EXECUÇÃO DE SENTENÇA - CUMPRIMENTO DE TÍTULO JUDICIAL", centerX, y, { align: "center" });
 
     // --- 2. TÍTULOS PRINCIPAIS ---
     y += 18;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
-    doc.text("PROCESSO JUDICIAL ELETRÔNICO", centerX, y, { align: "center" });
+    doc.text("DEMONSTRATIVO DE LIQUIDAÇÃO", centerX, y, { align: "center" });
 
     y += 6;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    doc.text("Processo Judiciário", centerX, y, { align: "center" });
+    doc.text("Guia de Levantamento Judicial", centerX, y, { align: "center" });
 
     // --- 3. DADOS DO PROCESSO ---
     y += 18;
     doc.setFontSize(10);
-    doc.text(`Credor: ${clientName}`, margin, y);
+    doc.text(`Beneficiário: ${clientName}`, margin, y);
     y += 6;
     doc.text(`CPF/CNPJ: ${clientCpf}`, margin, y);
 
@@ -415,7 +440,7 @@ export async function exportAsOficio(caseData: Case) {
 
     y += 7;
     doc.setFont("helvetica", "bold");
-    doc.text(`CUMPRIMENTO DE SENTENÇA CONTRA: ${defendant}`, margin, y);
+    doc.text(`EXECUTADO: ${defendant}`, margin, y);
 
     y += 2;
     doc.line(margin, y, pageWidth - margin, y);
@@ -423,32 +448,54 @@ export async function exportAsOficio(caseData: Case) {
     // --- 5. ASSUNTO E SITUAÇÃO ---
     y += 11;
     doc.setFont("helvetica", "normal");
-    doc.text("Assunto: Decisão Favorável", margin, y);
+    doc.text("Assunto: Expedição de Alvará / Ofício de Pagamento", margin, y);
     y += 6;
     doc.text("Situação: ", margin, y);
     doc.setFont("helvetica", "bold");
-    doc.text("AUTORIZADO", margin + doc.getTextWidth("Situação: "), y);
+    doc.setTextColor(0, 128, 0);
+    doc.text("AUTORIZADO PARA PAGAMENTO", margin + doc.getTextWidth("Situação: "), y);
+    doc.setTextColor(30, 30, 30);
 
     // --- 6. CÓDIGO DE BARRAS CENTRAL ---
     y += 13;
     const centralBarX = margin;
-    const centralBarH = 18;
-    const centralBarW = 60;
-    for (let i = 0; i < centralBarW; i += 1.5) {
-      const wWidth = Math.random() > 0.4 ? 1.0 : 0.5;
+    const centralBarH = 15;
+    const centralBarW = 100;
+    for (let i = 0; i < centralBarW; i += 1.2) {
+      const wWidth = Math.random() > 0.4 ? 0.8 : 0.4;
       doc.setFillColor(0, 0, 0);
       doc.rect(centralBarX + i, y, wWidth, centralBarH, "F");
     }
 
-    // --- 7. VALOR E TEXTO JURÍDICO ---
-    y += centralBarH + 13;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(`Valor a receber: R$${formattedValue} será depositado em conta corrente de sua titularidade.`, margin, y);
+    // --- 7. VALORES DETALHADOS ---
+    y += centralBarH + 15;
+    doc.setFont("helvetica", "bold");
+    doc.text("DISCRIMINAÇÃO DOS VALORES:", margin, y);
 
-    y += 16;
-    const legalTextFinal = "Os autos foram encaminhados pelo TJ à Vara da Fazenda para a execução do processo e posteriormente encaminhado para Vara das Execuções gerando o processo de Execução.";
-    const linesFinal = doc.splitTextToSize(legalTextFinal, pageWidth - margin * 2.5);
+    y += 8;
+    doc.setFont("helvetica", "normal");
+    doc.text(`VALOR PRINCIPAL BRUTO:`, margin, y);
+    doc.text(`R$ ${formattedPrincipal}`, pageWidth - margin, y, { align: "right" });
+
+    if (feeValue > 0) {
+      y += 6;
+      doc.text(`HONORÁRIOS ADVOCATÍCIOS (${feePercent}%):`, margin, y);
+      doc.text(`- R$ ${formattedFee}`, pageWidth - margin, y, { align: "right" });
+    }
+
+    y += 2;
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 6;
+    doc.setFont("helvetica", "bold");
+    doc.text(`VALOR LÍQUIDO DISPONÍVEL (CLIENTE):`, margin, y);
+    doc.setFontSize(11);
+    doc.text(`R$ ${formattedNet}`, pageWidth - margin, y, { align: "right" });
+    doc.setFontSize(10);
+
+    y += 12;
+    const legalTextFinal = `O referido valor de R$ ${formattedNet} encontra-se disponível para levantamento, devendo ser transferido integralmente para conta de titularidade do beneficiário acima qualificado.`;
+    const linesFinal = doc.splitTextToSize(legalTextFinal, pageWidth - margin * 2);
+    doc.setFont("helvetica", "normal");
     doc.text(linesFinal, margin, y);
 
     // --- 8. DATA ---

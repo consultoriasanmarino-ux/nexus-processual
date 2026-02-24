@@ -5,12 +5,15 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const DEFAULT_COMPANY_CONTEXT = `Somos uma empresa que acompanha o processo jurídico de alguns casos e notificamos o cliente quando ele tem algo para receber.
-Para receber o valor, precisamos que o cliente informe seus dados para pagamento: Banco, Agência e Conta.
+const DEFAULT_COMPANY_CONTEXT = `Advogado Paulo Tanaka. Somos uma empresa parceira que acompanha o processo jurídico de alguns casos, e notificamos o cliente quando ele tem algo para receber, no caso, quando as causas são favoráveis.
+O valor é sempre pago 100% integralmente, sem parcelamento.
+Para receber esse valor, vamos precisar que o cliente informe seus dados para pagamento: Banco, Agência e Conta. Após o envio dos dados, o Dr. Bruno entra em contato para fazer a validação da conta e efetuar o pagamento ao titular.
 REGRAS INTERNAS:
 - NUNCA diga percentuais ao cliente. Informe o valor total em reais.
 - O valor integral da causa deve ser informado como disponível para recebimento.
-- Abordagem sutil: confirmar identidade, depois novidades, depois valores.`;
+- NÃO mencione o Dr. Bruno antes do cliente enviar os dados bancários.
+- Abordagem sutil: confirmar identidade, depois novidades, depois valores.
+- O pagamento é feito ao titular da conta informada pelo cliente.`;
 
 function getTimePolicy(distributionDate: string | null, caseValueInput: any): string {
   const val = typeof caseValueInput === "string" ? parseFloat(caseValueInput) : (Number(caseValueInput) || 0);

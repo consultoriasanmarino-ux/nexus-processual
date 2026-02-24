@@ -66,24 +66,43 @@ export default function Clients() {
   };
 
   const handleExportAllCpfs = () => {
-    if (clients.length === 0) {
-      toast.info("Nenhum cliente cadastrado.");
+    // Export CPFs of all clients EXCEPT those who already have phone (telefone de consulta),
+    // because those already had leads imported. Clients with only phone_contract are included.
+    const eligibleClients = clients.filter((c) => {
+      const consultaPhone = (c.phone || "").replace(/\D/g, "");
+      return consultaPhone.length === 0;
+    });
+
+    if (eligibleClients.length === 0) {
+      toast.info("Todos os clientes já possuem telefone de consulta (leads já importados).");
       return;
     }
 
-    const cpfs = clients
-      .map((c) => c.cpf_or_identifier || "")
-      .filter(Boolean)
+    const withCpf = eligibleClients.filter(c => c.cpf_or_identifier && c.cpf_or_identifier.replace(/\D/g, "").length > 0);
+    const missingCpf = eligibleClients.length - withCpf.length;
+
+    if (withCpf.length === 0) {
+      toast.error(`${eligibleClients.length} clientes elegíveis não possuem CPF cadastrado.`);
+      return;
+    }
+
+    const cpfs = withCpf
+      .map((c) => c.cpf_or_identifier!.replace(/\D/g, ""))
       .join("\n");
 
     const blob = new Blob([cpfs], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "todos-os-cpfs.txt";
+    a.download = `cpfs-para-consulta-${new Date().toISOString().split('T')[0]}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success(`${clients.length} CPF(s) exportado(s).`);
+
+    if (missingCpf > 0) {
+      toast.success(`${withCpf.length} CPF(s) exportado(s). ${missingCpf} cliente(s) ignorados por falta de CPF.`);
+    } else {
+      toast.success(`${withCpf.length} CPF(s) exportado(s) para consulta.`);
+    }
   };
 
   const handleUploadPhones = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -212,7 +231,7 @@ export default function Clients() {
           {clients.length > 0 && (
             <div className="flex gap-2 flex-wrap">
               <Button variant="outline" size="sm" onClick={handleExportAllCpfs} className="text-xs">
-                <Download className="w-4 h-4 mr-1.5" /> Exportar todos CPFs
+                <Download className="w-4 h-4 mr-1.5" /> Exportar CPFs p/ Consulta
               </Button>
               <label>
                 <input type="file" accept=".txt" className="hidden" onChange={handleUploadPhones} />

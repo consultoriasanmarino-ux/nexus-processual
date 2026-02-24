@@ -9,7 +9,10 @@ import {
 } from "lucide-react";
 import { getStatusInfo } from "@/lib/types";
 import type { Client, Case } from "@/lib/types";
-import { formatPhone, formatCPF, formatCurrency } from "@/lib/utils";
+import { formatPhone, formatCPF, formatCurrency, formatProcessNumber } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { Edit2, Check, X } from "lucide-react";
 
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +20,9 @@ export default function ClientDetail() {
   const [client, setClient] = useState<Client | null>(null);
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingCpf, setEditingCpf] = useState(false);
+  const [tempCpf, setTempCpf] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!user || !id) return;
@@ -24,11 +30,28 @@ export default function ClientDetail() {
       supabase.from("clients").select("*").eq("id", id).single(),
       supabase.from("cases").select("*").eq("client_id", id).order("created_at", { ascending: false }),
     ]).then(([clientRes, casesRes]) => {
-      setClient(clientRes.data as Client | null);
+      const clientData = clientRes.data as Client | null;
+      setClient(clientData);
+      setTempCpf(clientData?.cpf_or_identifier || "");
       setCases((casesRes.data as Case[]) ?? []);
       setLoading(false);
     });
   }, [user, id]);
+
+  const handleUpdateCpf = async () => {
+    if (!id || !client) return;
+    setSaving(true);
+    const cleanCpf = tempCpf.replace(/\D/g, "");
+    const { error } = await supabase.from("clients").update({ cpf_or_identifier: cleanCpf }).eq("id", id);
+    if (error) {
+      toast.error("Erro ao atualizar CPF.");
+    } else {
+      setClient({ ...client, cpf_or_identifier: cleanCpf });
+      setEditingCpf(false);
+      toast.success("CPF atualizado com sucesso!");
+    }
+    setSaving(false);
+  };
 
   if (loading) {
     return (
@@ -86,7 +109,36 @@ export default function ClientDetail() {
         <div className="bg-card border border-border rounded-xl p-5 mb-6">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">Dados do Cliente</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {infoItems.map(({ icon: Icon, label, value }) => (
+            <div className="flex items-start gap-3">
+              <FileText className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-muted-foreground">CPF</p>
+                {editingCpf ? (
+                  <div className="flex items-center gap-2 mt-1">
+                    <Input
+                      value={tempCpf}
+                      onChange={(e) => setTempCpf(e.target.value)}
+                      className="h-8 text-sm bg-secondary border-border"
+                      autoFocus
+                    />
+                    <Button size="icon" variant="ghost" className="h-8 w-8 text-primary" onClick={handleUpdateCpf} disabled={saving}>
+                      <Check className="w-4 h-4" />
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" onClick={() => { setEditingCpf(false); setTempCpf(client.cpf_or_identifier || ""); }}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 group/cpf">
+                    <p className="text-sm font-medium break-words">{formatCPF(client.cpf_or_identifier) || "Sem CPF"}</p>
+                    <button onClick={() => setEditingCpf(true)} className="p-1 opacity-0 group-hover/cpf:opacity-100 hover:text-primary transition-all">
+                      <Edit2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            {infoItems.slice(1).map(({ icon: Icon, label, value }) => (
               <div key={label} className="flex items-start gap-3">
                 <Icon className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
                 <div className="min-w-0">
@@ -126,7 +178,7 @@ export default function ClientDetail() {
                       </div>
                       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
                         {c.process_number && (
-                          <span className="flex items-center gap-1"><Hash className="w-3 h-3" />{c.process_number}</span>
+                          <span className="flex items-center gap-1"><Hash className="w-3 h-3" />{formatProcessNumber(c.process_number)}</span>
                         )}
                         {c.defendant && (
                           <span>Réu: {c.defendant}</span>

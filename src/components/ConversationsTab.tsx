@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { aiMessage } from "@/lib/gemini";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, Sparkles, Loader2, MessageSquare, User, Bot, Image as ImageIcon, X, Trash2, Info, CheckCircle2 } from "lucide-react";
+import { Send, Sparkles, Loader2, MessageSquare, User, Bot, Image as ImageIcon, X, Trash2, Info, CheckCircle2, Pencil, Check } from "lucide-react";
 import { toast } from "sonner";
 import type { Case, Conversation, Message } from "@/lib/types";
 import { formatPhone } from "@/lib/utils";
@@ -28,6 +29,13 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
   } | null>(null);
   const [senderTab, setSenderTab] = useState<"assistant" | "client" | "operator">("assistant");
 
+  // State para edição de sugestão antes de enviar
+  const [pendingSuggestion, setPendingSuggestion] = useState<string | null>(null);
+
+  // State para edição de mensagens existentes
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingMessageText, setEditingMessageText] = useState("");
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const conversationId = conversations[0]?.id;
 
@@ -36,12 +44,11 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
 
   const clientName = (caseData as any).clients?.full_name || "Cliente";
   const firstName = toTitleCase(clientName.split(" ")[0]);
-  const initialMessage = `Olá, ${firstName}! Tenho novidades sobre sua ação de revisão...`; // Simplified for the component, actual from props/state if needed
+  const initialMessage = `Olá, ${firstName}! Tenho novidades sobre sua ação de revisão...`;
 
   const addMessage = async (sender: string, text: string) => {
     if (!user || !conversationId) return;
 
-    // Marcamos como ativo ao interagir
     await supabase
       .from("cases")
       .update({ is_chat_active: true } as any)
@@ -110,28 +117,21 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
     try {
       const recentMessages = messages.slice(-10).map((m) => ({ sender: m.sender, text: m.message_text }));
       const caseValueNum = typeof (caseData as any).case_value === "string"
-        ? parseFloat((caseData as any).case_value.replace(/\D/g, "")) // Limpa caracteres não numéricos
+        ? parseFloat((caseData as any).case_value.replace(/\D/g, ""))
         : Number((caseData as any).case_value || 0);
 
-      const { data, error } = await supabase.functions.invoke("ai-message", {
-        body: {
-          action: "chat_assistant",
-          caseId,
-          caseTitle: caseData.case_title,
-          distributionDate: caseData.distribution_date,
-          defendant: caseData.defendant,
-          court: caseData.court,
-          caseValue: caseValueNum,
-          recentMessages: recentMessages,
-          userQuery: userInput,
-          image: attachedImage,
-        },
+      const data = await aiMessage({
+        action: "chat_assistant",
+        caseId,
+        caseTitle: caseData.case_title,
+        defendant: caseData.defendant,
+        court: caseData.court,
+        caseValue: caseValueNum,
+        companyContext: caseData.company_context || undefined,
+        recentMessages: recentMessages,
+        userQuery: userInput,
+        image: attachedImage,
       });
-
-      if (error) {
-        console.error("Supabase Invoke Error:", error);
-        throw error;
-      }
 
       if (data?.error) {
         toast.error(`Sugestão Indisponível: ${data.error}`);
@@ -140,8 +140,6 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
       }
 
       setAiResponse(data);
-      // If user typed something personal to the AI, we don't necessarily register it in the "client conversation"
-      // unless they use one of the suggestions.
       toast.success("Nexus analisou a situação!");
     } catch (err: any) {
       toast.error(err.message || "Erro na análise da IA.");
@@ -149,8 +147,16 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
     setIsAskingAI(false);
   };
 
-  const handleUseSuggestion = async (text: string) => {
-    await addMessage("operator", text);
+  // Ao clicar na sugestão, abre o editor de confirmação em vez de enviar direto
+  const handleSelectSuggestion = (text: string) => {
+    setPendingSuggestion(text);
+  };
+
+  // Confirma e envia a sugestão (possivelmente editada)
+  const handleConfirmSuggestion = async () => {
+    if (!pendingSuggestion?.trim()) return;
+    await addMessage("operator", pendingSuggestion);
+    setPendingSuggestion(null);
     setAiResponse(null);
     setUserInput("");
     setAttachedImage(null);
@@ -162,6 +168,50 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
     await addMessage(sender, userInput);
     setUserInput("");
     toast.success("Mensagem registrada.");
+  };
+
+  // Editar mensagem existente no banco
+  const handleStartEdit = (msg: Message) => {
+    setEditingMessageId(msg.id);
+    setEditingMessageText(msg.message_text);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingMessageId || !editingMessageText.trim()) return;
+
+    const { error } = await supabase
+      .from("messages")
+      .update({ message_text: editingMessageText })
+      .eq("id", editingMessageId);
+
+    if (error) {
+      toast.error("Erro ao editar mensagem.");
+    } else {
+      toast.success("Mensagem editada!");
+      onRefresh();
+    }
+    setEditingMessageId(null);
+    setEditingMessageText("");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessageId(null);
+    setEditingMessageText("");
+  };
+
+  // Deletar mensagem
+  const handleDeleteMessage = async (msgId: string) => {
+    const { error } = await supabase
+      .from("messages")
+      .delete()
+      .eq("id", msgId);
+
+    if (error) {
+      toast.error("Erro ao excluir mensagem.");
+    } else {
+      toast.success("Mensagem excluída.");
+      onRefresh();
+    }
   };
 
   return (
@@ -201,21 +251,96 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
         ) : (
           messages.map((m) => (
             <div key={m.id} className={`flex gap-2 ${m.sender === "operator" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${m.sender === "operator"
+              <div className={`group max-w-[85%] rounded-xl px-3 py-2 text-sm relative ${m.sender === "operator"
                 ? "bg-primary/20 border border-primary/30 text-foreground ml-auto"
                 : "bg-secondary border border-border text-foreground"
                 }`}>
                 <div className="flex items-center gap-1.5 mb-1 opacity-60">
                   {m.sender === "client" ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3 text-primary" />}
                   <span className="text-[10px] font-bold uppercase">{m.sender === "client" ? "Cliente" : "Operador"}</span>
+                  {/* Botões Editar / Excluir */}
+                  <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => handleStartEdit(m)}
+                      className="p-0.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                      title="Editar"
+                    >
+                      <Pencil className="w-2.5 h-2.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteMessage(m.id)}
+                      className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                      title="Excluir"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
                 </div>
-                <p className="whitespace-pre-wrap leading-relaxed">{m.message_text}</p>
+
+                {editingMessageId === m.id ? (
+                  <div className="space-y-2">
+                    <Textarea
+                      value={editingMessageText}
+                      onChange={(e) => setEditingMessageText(e.target.value)}
+                      className="bg-background border-primary/30 min-h-[60px] resize-y text-sm"
+                      autoFocus
+                    />
+                    <div className="flex items-center gap-1.5">
+                      <Button size="sm" onClick={handleSaveEdit} className="h-6 text-[10px] px-2 bg-primary text-primary-foreground">
+                        <Check className="w-3 h-3 mr-1" /> Salvar
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={handleCancelEdit} className="h-6 text-[10px] px-2">
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap leading-relaxed">{m.message_text}</p>
+                )}
+
                 <p className="text-[9px] opacity-40 mt-1">{new Date(m.created_at).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' })}</p>
               </div>
             </div>
           ))
         )}
       </div>
+
+      {/* Pending Suggestion Confirmation */}
+      {pendingSuggestion !== null && (
+        <div className="bg-card border-2 border-primary/40 rounded-xl p-4 space-y-3 shadow-glow animate-slide-up">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="p-1 bg-primary/10 rounded-lg">
+              <Pencil className="w-3.5 h-3.5 text-primary" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-foreground">Revisar antes de enviar</h4>
+              <p className="text-[10px] text-muted-foreground">Edite se necessário e confirme para registrar no histórico.</p>
+            </div>
+          </div>
+          <Textarea
+            value={pendingSuggestion}
+            onChange={(e) => setPendingSuggestion(e.target.value)}
+            className="bg-secondary border-primary/20 min-h-[80px] resize-y text-sm focus:ring-primary/30"
+            autoFocus
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleConfirmSuggestion}
+              disabled={!pendingSuggestion?.trim()}
+              className="flex-1 bg-gradient-gold text-primary-foreground font-bold"
+            >
+              <Check className="w-4 h-4 mr-2" /> Confirmar e Enviar
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setPendingSuggestion(null)}
+              className="text-muted-foreground hover:text-destructive"
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Input / Assistant Area */}
       <div className="bg-card border border-border rounded-xl p-4 space-y-4 shadow-sm">
@@ -330,14 +455,14 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {aiResponse.suggestions.map((s, i) => (
-                <div key={i} className="group relative bg-secondary hover:bg-secondary/80 border border-border rounded-xl p-3 transition-all cursor-pointer" onClick={() => handleUseSuggestion(s.text)}>
+                <div key={i} className="group relative bg-secondary hover:bg-secondary/80 border border-border rounded-xl p-3 transition-all cursor-pointer" onClick={() => handleSelectSuggestion(s.text)}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] font-black uppercase text-secondary-foreground/60">{s.label}</span>
-                    <Sparkles className="w-3 h-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <Pencil className="w-3 h-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                   <p className="text-xs line-clamp-3 italic text-foreground mb-3">"{s.text}"</p>
                   <Button size="sm" variant="outline" className="w-full text-[10px] h-7 font-bold uppercase tracking-wider group-hover:bg-primary group-hover:text-primary-foreground transition-all">
-                    Usar Resposta
+                    Revisar e Enviar
                   </Button>
                 </div>
               ))}

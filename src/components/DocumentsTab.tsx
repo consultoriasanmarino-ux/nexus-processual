@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { aiAnalyze } from "@/lib/gemini";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,14 +48,12 @@ export function DocumentsTab({ caseId, documents, onRefresh }: Props) {
     if (!doc.file_url) return;
     setProcessingId(doc.id);
     try {
-      const { data, error } = await supabase.functions.invoke("ai-analyze", {
-        body: {
-          caseId,
-          documentId: doc.id,
-          fileUrl: doc.file_url,
-        },
+      const result = await aiAnalyze({
+        petitionText: "",
+        contractText: "",
+        contractType: "outros",
       });
-      if (error) throw error;
+      if (!result.success) throw new Error(result.error || "Erro ao processar.");
       toast.success("PDF processado com IA!");
       onRefresh();
     } catch (err: any) {

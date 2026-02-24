@@ -15,6 +15,25 @@ export interface Client {
   created_at: string;
 }
 
+export interface Lawyer {
+  id: string;
+  user_id: string;
+  name: string;
+  oab: string | null;
+  specialty: string | null;
+  created_at: string;
+}
+
+export interface Caller {
+  id: string;
+  user_id: string;
+  name: string;
+  pin: string;
+  lawyer_ids: string[];
+  active: boolean;
+  created_at: string;
+}
+
 export interface Case {
   id: string;
   user_id: string;
@@ -24,16 +43,18 @@ export interface Case {
   case_type: string | null;
   court: string | null;
   process_number: string | null;
-  distribution_date: string | null;
   partner_law_firm_name: string | null;
   partner_lawyer_name: string | null;
   company_context: string | null;
   case_summary: string | null;
   case_value: number | null;
+  lawyer_type: string | null;
+  lawyer_id: string | null;
   status: string;
   is_chat_active: boolean;
   created_at: string;
   clients?: Client;
+  lawyers?: Lawyer;
 }
 
 export interface Document {

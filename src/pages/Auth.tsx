@@ -3,43 +3,108 @@ import { supabase } from "@/integrations/supabase/client";
 import { Scale, Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { useAuth } from "@/hooks/useAuth";
 
 const ACCESS_CODE = "171033";
-const DEFAULT_EMAIL = "operador@central-processual.app";
-const DEFAULT_PASS = "Cp#2026!SecureAccess";
+const DEFAULT_EMAIL = "operador@nexusprocessual.com";
+const DEFAULT_PASS = "Nexus#2026!SecureAccess";
 
 export default function Auth() {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const { setRole, setCallerInfo } = useAuth();
 
-  const handleComplete = async (value: string) => {
-    if (value !== ACCESS_CODE) {
-      toast.error("Código inválido.");
-      setCode("");
-      return;
-    }
-
-    setLoading(true);
-    // Try sign in first, if fails, sign up
+  const doLogin = async () => {
+    // Try login first
     const { error: signInErr } = await supabase.auth.signInWithPassword({
       email: DEFAULT_EMAIL,
       password: DEFAULT_PASS,
     });
 
     if (signInErr) {
-      const { error: signUpErr } = await supabase.auth.signUp({
+      // If login fails, try to create user
+      const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
         email: DEFAULT_EMAIL,
         password: DEFAULT_PASS,
       });
+
       if (signUpErr) {
-        toast.error(signUpErr.message);
-        setLoading(false);
-        setCode("");
-        return;
+        console.error("Signup error:", signUpErr);
+        toast.error("Erro ao criar acesso. Verifique as configurações do Supabase.");
+        return false;
+      }
+
+      if (signUpData?.user?.identities?.length === 0) {
+        toast.error("O Supabase exige confirmação de email. Desabilite em Authentication > Providers > Email.");
+        return false;
+      }
+
+      const { error: retryErr } = await supabase.auth.signInWithPassword({
+        email: DEFAULT_EMAIL,
+        password: DEFAULT_PASS,
+      });
+
+      if (retryErr) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          toast.error("Conta criada! Se o acesso não funcionar, desabilite 'Confirm email' no Supabase.");
+          return false;
+        }
       }
     }
+    return true;
+  };
 
-    toast.success("Acesso autorizado!");
+  const handleComplete = async (value: string) => {
+    setLoading(true);
+
+    // Check if it's the admin code
+    if (value === ACCESS_CODE) {
+      const ok = await doLogin();
+      if (ok) {
+        setRole("admin");
+        setCallerInfo(null);
+        toast.success("Acesso admin autorizado!");
+      } else {
+        setCode("");
+      }
+      setLoading(false);
+      return;
+    }
+
+    // Check if PIN matches a caller
+    // Need to login first to query the callers table
+    const ok = await doLogin();
+    if (!ok) {
+      setCode("");
+      setLoading(false);
+      return;
+    }
+
+    // Now query callers table for matching PIN
+    const { data: callers } = await supabase
+      .from("callers" as any)
+      .select("*")
+      .eq("pin", value)
+      .eq("active", true);
+
+    const matchedCaller = (callers as any[])?.[0];
+
+    if (matchedCaller) {
+      setRole("caller");
+      setCallerInfo({
+        id: matchedCaller.id,
+        name: matchedCaller.name,
+        lawyer_ids: matchedCaller.lawyer_ids || [],
+      });
+      toast.success(`Bem-vindo, ${matchedCaller.name}!`);
+    } else {
+      // No match — sign out and show error
+      await supabase.auth.signOut();
+      toast.error("Código inválido.");
+      setCode("");
+    }
+
     setLoading(false);
   };
 
