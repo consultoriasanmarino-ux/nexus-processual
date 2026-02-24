@@ -43,52 +43,67 @@ async function callGemini(systemPrompt: string, userParts: GeminiPart[]): Promis
     }
 
     let lastErrorDetails = "";
+    const MAX_RETRIES = 3;
 
     // Rotativo: Try each API Key
     for (const key of apiKeys) {
-        for (const model of MODELS) {
-            const url = `${BASE_URL}/${model}:generateContent?key=${key}`;
+        const url = `${BASE_URL}/${MODELS[0]}:generateContent?key=${key}`;
 
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
             try {
-                console.log(`Tentando Gemini: ${model} com chave ${key.substring(0, 5)}...`);
+                console.log(`Tentando Gemini 2.5 Flash (chave ${key.substring(0, 5)}..., tentativa ${attempt + 1}/${MAX_RETRIES})`);
                 const res = await fetch(url, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(body),
                 });
 
+                // Read body ONCE as text, then parse
+                const responseText = await res.text();
+                let responseJson: any = {};
+                try { responseJson = JSON.parse(responseText); } catch { }
+
                 if (res.ok) {
-                    const result = await res.json();
-                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
-                    console.log(`Gemini Sucesso! (${model})`);
+                    const text = responseJson.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                    console.log(`✅ Gemini 2.5 Flash: Sucesso!`);
                     return text;
                 }
 
-                const errJson = await res.json().catch(() => ({}));
-                const errMsg = errJson.error?.message || `Status ${res.status}`;
-                lastErrorDetails = `[${model}]: ${errMsg}`;
+                const errMsg = responseJson.error?.message || `Status ${res.status}`;
+                lastErrorDetails = errMsg;
+                console.error(`❌ Gemini erro (${res.status}):`, errMsg);
 
-                console.error(`Falha no Gemini (${model}):`, errMsg);
-
-                // Se for erro de quota (429), pula para a PRÓXIMA CHAVE imediatamente
+                // 429 = Rate Limit: wait and retry with this same key
                 if (res.status === 429) {
-                    break;
+                    const waitSeconds = Math.pow(2, attempt + 1) * 5; // 10s, 20s, 40s
+                    console.warn(`⏳ Rate limit atingido. Aguardando ${waitSeconds}s antes de tentar novamente...`);
+                    await sleep(waitSeconds * 1000);
+                    continue; // Retry same key
                 }
 
-                // Se for erro de "Modelo Não Encontrado" ou Permissão, tenta o PRÓXIMO MODELO desta chave
-                if (res.status === 404 || res.status === 403 || res.status === 400) {
-                    continue;
+                // 403/400 = Key or permission issue, try next key
+                if (res.status === 403 || res.status === 400) {
+                    break; // Next key
                 }
+
+                // 404 = Model not found
+                if (res.status === 404) {
+                    throw new Error("Modelo gemini-2.5-flash não encontrado. Verifique se a API Gemini está habilitada no seu projeto Google Cloud.");
+                }
+
+                // Other errors: try next key
+                break;
 
             } catch (err: any) {
                 lastErrorDetails = err.message;
                 console.error(`Erro de rede:`, err);
-                break;
+                if (err.message.includes("Modelo gemini-2.5-flash")) throw err; // Re-throw model errors
+                break; // Network error, try next key
             }
         }
     }
 
-    throw new Error(`Todas as chaves falharam. Último erro: ${lastErrorDetails}`);
+    throw new Error(`Falha na API Gemini: ${lastErrorDetails}`);
 }
 
 function extractJson(raw: string): any {
