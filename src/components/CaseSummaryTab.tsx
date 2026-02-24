@@ -5,11 +5,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Sparkles, Loader2, AlertTriangle, Building2, User, Gavel, Save, BookOpen, DollarSign, CalendarIcon, ClipboardList, Phone, Pencil } from "lucide-react";
+import { Sparkles, Loader2, AlertTriangle, Building2, User, Gavel, Save, BookOpen, DollarSign, CalendarIcon, ClipboardList, Phone, Pencil, Car, Banknote, BriefcaseIcon, Milestone } from "lucide-react";
 import { toast } from "sonner";
 import type { Case, Document, AiOutput } from "@/lib/types";
 import ReactMarkdown from "react-markdown";
-import { format } from "date-fns";
+import { format, differenceInYears } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -185,6 +185,8 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
   const client = (caseData as any).clients;
   const extracted = docWithJson?.extracted_json as any;
 
+  const age = client?.birth_date ? differenceInYears(new Date(), new Date(client.birth_date)) : null;
+
   return (
     <div className="space-y-4 animate-fade-in">
       {!isCaller && (
@@ -259,13 +261,33 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
             <User className="w-3.5 h-3.5" /> Cliente
           </div>
           {client && (
-            <div className="space-y-2">
-              <p className="text-sm font-medium">{client.full_name}</p>
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-bold text-foreground mb-1">{client.full_name}</p>
+                {client.cpf_or_identifier && <p className="text-[11px] text-muted-foreground">CPF: {formatCPF(client.cpf_or_identifier)}</p>}
+                {age !== null && <p className="text-[11px] text-muted-foreground">Idade: {age} anos</p>}
+              </div>
+
               <ClientPhoneEditor client={client} onRefresh={onRefresh} />
-              {client.cpf_or_identifier && <p className="text-xs text-muted-foreground">CPF: {formatCPF(client.cpf_or_identifier)}</p>}
+
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/50">
+                <div className="space-y-1">
+                  <p className="text-[9px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                    <BriefcaseIcon className="w-2.5 h-2.5" /> Profissão
+                  </p>
+                  <p className="text-[11px] font-medium truncate">{client.profession || "Não inf."}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[9px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                    <DollarSign className="w-2.5 h-2.5" /> Renda
+                  </p>
+                  <p className="text-[11px] font-medium truncate">{client.income || "Não inf."}</p>
+                </div>
+              </div>
             </div>
           )}
         </div>
+
         <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
           <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
             <Gavel className="w-3.5 h-3.5" /> Processo
@@ -294,48 +316,39 @@ export function CaseSummaryTab({ caseData, documents, aiOutputs, onRefresh }: Pr
               </Button>
             </div>
           </div>
+
+          {(caseData.partner_law_firm_name || caseData.partner_lawyer_name) && (
+            <div className="mt-4 pt-4 border-t border-border/50">
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-1 font-bold uppercase">
+                <Building2 className="w-3 h-3" /> Escritório Parceiro
+              </div>
+              <p className="text-sm">{caseData.partner_law_firm_name || caseData.partner_lawyer_name}</p>
+            </div>
+          )}
         </div>
-        {(caseData.partner_law_firm_name || caseData.partner_lawyer_name) && (
-          <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-              <Building2 className="w-3.5 h-3.5" /> Escritório Parceiro
-            </div>
-            <div className="space-y-1">
-              {caseData.partner_law_firm_name && <p className="text-sm">{caseData.partner_law_firm_name}</p>}
-              {caseData.partner_lawyer_name && <p className="text-xs text-muted-foreground">Adv: {caseData.partner_lawyer_name}</p>}
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Dados Extras (Informações Complementares) */}
-      {extracted?.client_details && (
-        <div className="bg-card border border-border rounded-xl p-4 shadow-sm border-l-4 border-l-primary/30">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-            <ClipboardList className="w-3.5 h-3.5" /> Informações Complementares (Extraído da IA)
+      {/* Dados Complementares (Veículos e Bancos) */}
+      {client && (client.vehicles || client.banks) && (
+        <div className="bg-card border border-primary/20 rounded-xl p-4 shadow-sm border-l-4 border-l-primary">
+          <div className="flex items-center gap-2 text-xs font-bold text-primary mb-3 uppercase tracking-wider">
+            <Milestone className="w-4 h-4" /> Dados Complementares (Lead)
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-4 gap-x-6">
-            <div>
-              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mb-0.5">Profissão / Renda</p>
-              <p className="text-sm font-medium">
-                {extracted.client_details.profession || "N/A"}
-                {extracted.client_details.income && ` - R$ ${extracted.client_details.income}`}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mb-0.5">Idade</p>
-              <p className="text-sm font-medium">{extracted.client_details.age || "N/A"}</p>
-            </div>
-            {extracted.client_details.vehicles?.length > 0 && (
-              <div>
-                <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mb-0.5">Veículos</p>
-                <p className="text-sm font-medium">{extracted.client_details.vehicles.join(", ")}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {client.vehicles && (
+              <div className="space-y-1.5 bg-black/10 p-2.5 rounded-lg border border-white/5">
+                <p className="text-[10px] text-muted-foreground uppercase font-bold flex items-center gap-1.5">
+                  <Car className="w-3 h-3" /> Veículos Localizados
+                </p>
+                <p className="text-xs font-medium text-foreground">{client.vehicles}</p>
               </div>
             )}
-            {extracted.client_details.banks?.length > 0 && (
-              <div className="sm:col-span-2">
-                <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mb-0.5">Bancos Relacionados</p>
-                <p className="text-sm font-medium">{extracted.client_details.banks.join(", ")}</p>
+            {client.banks && (
+              <div className="space-y-1.5 bg-black/10 p-2.5 rounded-lg border border-white/5">
+                <p className="text-[10px] text-muted-foreground uppercase font-bold flex items-center gap-1.5">
+                  <Banknote className="w-3 h-3" /> Bancos Relacionados
+                </p>
+                <p className="text-xs font-medium text-foreground">{client.banks}</p>
               </div>
             )}
           </div>
