@@ -162,6 +162,17 @@ export default function Index() {
     return list;
   }, [cases, activeTab, search, isCaller, showMarked, markedCases]);
 
+  // Calculate case counts per client to show "Multiple Cases" badge
+  const clientCaseCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    cases.forEach((c) => {
+      if (c.client_id) {
+        counts[c.client_id] = (counts[c.client_id] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [cases]);
+
   // Toggle mark for a case (caller only)
   const toggleCaseMark = async (caseId: string) => {
     if (!callerInfo) return;
@@ -370,7 +381,12 @@ export default function Index() {
                     {client && (
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
                         <User className="w-3 h-3" />
-                        <span>{client.full_name}</span>
+                        <span className="truncate">{client.full_name}</span>
+                        {clientCaseCounts[c.client_id] > 1 && (
+                          <span className="flex-shrink-0 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[9px] font-bold border border-primary/20 uppercase animate-pulse">
+                            +{clientCaseCounts[c.client_id] - 1} Outros
+                          </span>
+                        )}
                       </div>
                     )}
 

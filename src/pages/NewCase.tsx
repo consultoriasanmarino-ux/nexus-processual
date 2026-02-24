@@ -320,19 +320,53 @@ export default function NewCase() {
   }) => {
     if (!user) throw new Error("Usuário não autenticado");
 
-    // 1. Create client
-    const { data: clientData, error: clientErr } = await supabase
-      .from("clients")
-      .insert({
-        full_name: data.clientName,
-        cpf_or_identifier: data.clientCpf || null,
-        phone: data.phoneSource,
-        phone_contract: data.phoneContractSource || null,
-        user_id: user.id,
-      } as any)
-      .select()
-      .single();
-    if (clientErr) throw clientErr;
+    // 1. Find or create client
+    let clientData: any = null;
+    const cleanCpf = data.clientCpf?.replace(/\D/g, "");
+
+    // Try to find existing client by CPF or precise Name
+    const query = supabase.from("clients").select("*").eq("user_id", user.id);
+    if (cleanCpf) {
+      query.eq("cpf_or_identifier", cleanCpf);
+    } else {
+      query.eq("full_name", data.clientName);
+    }
+
+    const { data: existingClients } = await query;
+
+    if (existingClients && existingClients.length > 0) {
+      clientData = existingClients[0];
+
+      // Update phone if the new case has one and the existing record doesn't (or if they are different)
+      const updates: any = {};
+      if (data.phoneSource && !clientData.phone) updates.phone = data.phoneSource;
+      if (data.phoneContractSource && !clientData.phone_contract) updates.phone_contract = data.phoneContractSource;
+
+      if (Object.keys(updates).length > 0) {
+        const { data: updated } = await supabase
+          .from("clients")
+          .update(updates)
+          .eq("id", clientData.id)
+          .select()
+          .single();
+        if (updated) clientData = updated;
+      }
+    } else {
+      // Create new client
+      const { data: newClient, error: clientErr } = await supabase
+        .from("clients")
+        .insert({
+          full_name: data.clientName,
+          cpf_or_identifier: cleanCpf || null,
+          phone: data.phoneSource || null,
+          phone_contract: data.phoneContractSource || null,
+          user_id: user.id,
+        } as any)
+        .select()
+        .single();
+      if (clientErr) throw clientErr;
+      clientData = newClient;
+    }
 
     // 2. Create case
     const parsedValue = data.caseValue ? parseFloat(data.caseValue.replace(/\./g, "").replace(",", ".")) : null;
