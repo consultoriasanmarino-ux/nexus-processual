@@ -1,6 +1,6 @@
 const GEMINI_API_KEYS = (import.meta.env.VITE_GEMINI_API_KEY || "").split(",").map((k: string) => k.trim()).filter(Boolean);
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-const MODELS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash"];
+const MODELS = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
 
 interface GeminiPart {
     text?: string;
@@ -55,26 +55,24 @@ async function callGemini(systemPrompt: string, userParts: GeminiPart[]): Promis
                         break;
                     }
 
-                    if (res.status === 404) {
-                        console.warn(`Modelo ${model} não encontrado para a chave ${key.substring(0, 6)} (404). Tentando próximo...`);
-                        break; // Try next model
+                    if (res.status === 404 || res.status === 403) {
+                        console.warn(`Erro ${res.status} (Modelo ${model} ou Chave) para a chave ${key.substring(0, 6)}. Tentando próximo...`);
+                        break; // Try next model/key
                     }
 
-                    // Non-429, non-404 error: throw immediately
+                    // For other errors, don't throw yet, try next model/key
                     const errText = await res.text();
-                    console.error(`Gemini error (${model}):`, res.status, errText);
-                    throw new Error(`Erro na API do Gemini (${res.status})`);
+                    console.warn(`Gemini error (${model}, status ${res.status}):`, errText);
+                    break;
                 } catch (err: any) {
-                    if (err.message?.includes("Erro na API")) throw err;
                     console.error(`Fetch error (${model}):`, err);
-                    // Continue to next model/key
                     break;
                 }
             }
         }
     }
 
-    throw new Error("Limite de requisições atingido em TODAS as chaves disponíveis. Aguarde alguns instantes.");
+    throw new Error("Erro de conexão ou limites atingidos em TODAS as chaves. Verifique suas API Keys no .env.");
 }
 
 function extractJson(raw: string): any {
