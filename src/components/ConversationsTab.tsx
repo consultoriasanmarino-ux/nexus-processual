@@ -119,7 +119,18 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
       if (res.error) {
         toast.error(res.error);
       } else {
-        // Build the AI text
+        // 1. Process transcription (Auto-type the conversation from the print)
+        if (res.transcription && Array.isArray(res.transcription)) {
+          console.log("Transcrevendo diálogo do print...");
+          for (const item of res.transcription) {
+            // Only add if it's a valid sender
+            if (item.sender === "client" || item.sender === "user") {
+              await addMessage(item.sender, item.text);
+            }
+          }
+        }
+
+        // 2. Build the AI analysis text
         let aiText = `🤖 **Análise da Nexus IA:**\n\n${res.analysis}\n\n💡 **Sugestões:**\n`;
         res.suggestions.forEach((s: any) => {
           aiText += `- ${s.label}: "${s.text}"\n`;

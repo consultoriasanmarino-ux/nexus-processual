@@ -272,7 +272,17 @@ export async function aiMessage(params: {
         systemPrompt = `Você é o "Nexus Assistente", especialista em negociação via WhatsApp.
 CONTEXTO DA EMPRESA: ${compCtx}
 ${contextStr}
-Responda em JSON: { "analysis": "...", "suggestions": [{"label": "...", "text": "..."}], "advice": "..." }`;
+Se houver uma IMAGEM (print de WhatsApp), transcreva o diálogo.
+Responda APENAS em JSON: 
+{ 
+  "analysis": "...", 
+  "suggestions": [{"label": "...", "text": "..."}], 
+  "advice": "...",
+  "transcription": [
+    {"sender": "client", "text": "o que o cliente disse"},
+    {"sender": "user", "text": "o que o usuário respondeu no print"}
+  ]
+}`;
         userPrompt = `HISTÓRICO:\n${chatHistory}\n\nPERGUNTA:\n${userQuery || "Analisar situação."}${image ? "\n(HÁ IMAGEM EM ANEXO)" : ""}`;
     } else {
         systemPrompt = `Gerador de Mensagens Jurídicas.\n${compCtx}\n${contextStr}\nResponda em JSON: { "message": "...", "short_variant": "...", "confidence": 10, "scam_risk": "baixo", "scam_reasons": [] }`;
