@@ -5,9 +5,17 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Trash2, Save, Loader2, Scale, UserCheck, Headphones, ShieldCheck, Phone, Check, Key, Sparkles } from "lucide-react";
+import { Plus, Trash2, Save, Loader2, Scale, UserCheck, Headphones, ShieldCheck, Phone, Check, Key, Sparkles, Pencil, CheckSquare, Square } from "lucide-react";
 import { toast } from "sonner";
 import type { Lawyer, Caller } from "@/lib/types";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 
 type SettingsTab = "advogados" | "tecladores" | "api_keys";
 
@@ -30,6 +38,11 @@ export default function Settings() {
     const [callerPin, setCallerPin] = useState("");
     const [callerLawyerIds, setCallerLawyerIds] = useState<string[]>([]);
     const [savingCaller, setSavingCaller] = useState(false);
+    const [editingCaller, setEditingCaller] = useState<Caller | null>(null);
+    const [editName, setEditName] = useState("");
+    const [editPin, setEditPin] = useState("");
+    const [editLawyerIds, setEditLawyerIds] = useState<string[]>([]);
+    const [updatingCaller, setUpdatingCaller] = useState(false);
 
     // API Keys state
     const [apiKeys, setApiKeys] = useState<{ id: string; key_value: string; created_at: string }[]>([]);
@@ -161,12 +174,65 @@ export default function Settings() {
         }
     };
 
-    const toggleCallerLawyer = (lawyerId: string) => {
-        setCallerLawyerIds((prev) =>
-            prev.includes(lawyerId)
-                ? prev.filter((id) => id !== lawyerId)
-                : [...prev, lawyerId]
-        );
+    const handleOpenEditCaller = (caller: Caller) => {
+        setEditingCaller(caller);
+        setEditName(caller.name);
+        setEditPin(caller.pin);
+        setEditLawyerIds(caller.lawyer_ids || []);
+    };
+
+    const handleUpdateCaller = async () => {
+        if (!editingCaller) return;
+        if (!editName.trim()) { toast.error("Nome é obrigatório."); return; }
+        if (editPin.length !== 6) { toast.error("PIN deve ter 6 dígitos."); return; }
+        if (editLawyerIds.length === 0) { toast.error("Selecione ao menos um advogado."); return; }
+
+        setUpdatingCaller(true);
+        const { error } = await supabase
+            .from("callers" as any)
+            .update({
+                name: editName.trim(),
+                pin: editPin,
+                lawyer_ids: editLawyerIds,
+            } as any)
+            .eq("id", editingCaller.id);
+
+        if (error) { toast.error("Erro ao atualizar teclador."); console.error(error); }
+        else {
+            toast.success("Teclador atualizado!");
+            setEditingCaller(null);
+            fetchCallers();
+        }
+        setUpdatingCaller(false);
+    };
+
+    const toggleCallerLawyer = (lawyerId: string, isEdit: boolean = false) => {
+        if (isEdit) {
+            setEditLawyerIds((prev) =>
+                prev.includes(lawyerId)
+                    ? prev.filter((id) => id !== lawyerId)
+                    : [...prev, lawyerId]
+            );
+        } else {
+            setCallerLawyerIds((prev) =>
+                prev.includes(lawyerId)
+                    ? prev.filter((id) => id !== lawyerId)
+                    : [...prev, lawyerId]
+            );
+        }
+    };
+
+    const selectAllLawyers = (isEdit: boolean = false) => {
+        const allIds = ["geral", ...lawyers.map(l => l.id)];
+        if (isEdit) setEditLawyerIds(allIds);
+        else setCallerLawyerIds(allIds);
+        toast.info("Todos selecionados.");
+    };
+
+    const deselectAllLawyers = (isEdit: boolean = false) => {
+        if (isEdit) setEditLawyerIds([]);
+        else setCallerLawyerIds([]);
+        toast.info("Todos desmarcados.");
     };
 
     const getLawyerName = (id: string) => {
@@ -399,7 +465,25 @@ export default function Settings() {
 
                             {/* Lawyer selection */}
                             <div className="space-y-2">
-                                <Label className="text-xs text-muted-foreground">Advogados disponíveis para este teclador *</Label>
+                                <div className="flex items-center justify-between">
+                                    <Label className="text-xs text-muted-foreground">Advogados disponíveis para este teclador *</Label>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => selectAllLawyers()}
+                                            className="text-[10px] flex items-center gap-1 text-primary hover:underline font-medium"
+                                        >
+                                            <CheckSquare className="w-3 h-3" /> Selecionar Todos
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => deselectAllLawyers()}
+                                            className="text-[10px] flex items-center gap-1 text-muted-foreground hover:underline font-medium"
+                                        >
+                                            <Square className="w-3 h-3" /> Limpar
+                                        </button>
+                                    </div>
+                                </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                     {/* Paulo Tanaka (geral) */}
                                     <button
@@ -502,6 +586,13 @@ export default function Settings() {
                                                     </button>
                                                     <Button
                                                         variant="ghost" size="icon"
+                                                        className="h-8 w-8 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary transition-all"
+                                                        onClick={() => handleOpenEditCaller(caller)}
+                                                    >
+                                                        <Pencil className="w-4 h-4" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost" size="icon"
                                                         className="h-8 w-8 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
                                                         onClick={() => handleDeleteCaller(caller.id)}
                                                     >
@@ -526,6 +617,79 @@ export default function Settings() {
                     </div>
                 )}
             </div>
+
+            {/* Edit Caller Dialog */}
+            <Dialog open={!!editingCaller} onOpenChange={(open) => !open && setEditingCaller(null)}>
+                <DialogContent className="max-w-md bg-card border-border shadow-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Pencil className="w-5 h-5 text-violet-400" /> Editar Teclador
+                        </DialogTitle>
+                        <DialogDescription>
+                            Atualize os dados e as permissões de acesso deste teclador.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-6 py-4">
+                        <div className="grid grid-cols-1 gap-4">
+                            <div className="space-y-2">
+                                <Label className="text-xs text-muted-foreground">Nome completo</Label>
+                                <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="bg-secondary border-border" />
+                            </div>
+                            <div className="space-y-2">
+                                <Label className="text-xs text-muted-foreground">PIN de Acesso (6 dígitos)</Label>
+                                <Input
+                                    value={editPin}
+                                    onChange={(e) => setEditPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                                    className="bg-secondary border-border font-mono tracking-[0.3em] text-center"
+                                    maxLength={6}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <Label className="text-xs text-muted-foreground">Advogados permitidos</Label>
+                                <div className="flex gap-2 text-[10px] font-medium">
+                                    <button onClick={() => selectAllLawyers(true)} className="text-primary hover:underline">Selecionar Todos</button>
+                                    <button onClick={() => deselectAllLawyers(true)} className="text-muted-foreground hover:underline">Limpar</button>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 gap-2 max-h-[30vh] overflow-y-auto pr-2 custom-scrollbar">
+                                <button
+                                    onClick={() => toggleCallerLawyer("geral", true)}
+                                    className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-left text-sm transition-all ${editLawyerIds.includes("geral") ? "bg-primary/10 border-primary/40" : "bg-secondary/30 border-border"}`}
+                                >
+                                    <div className={`w-4 h-4 rounded flex items-center justify-center ${editLawyerIds.includes("geral") ? "bg-primary" : "border border-muted-foreground/30"}`}>
+                                        {editLawyerIds.includes("geral") && <Check className="w-3 h-3 text-primary-foreground" />}
+                                    </div>
+                                    <span className="text-xs">Paulo Tanaka (Geral)</span>
+                                </button>
+                                {lawyers.map((l) => (
+                                    <button
+                                        key={l.id}
+                                        onClick={() => toggleCallerLawyer(l.id, true)}
+                                        className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-left text-sm transition-all ${editLawyerIds.includes(l.id) ? "bg-violet-500/10 border-violet-500/40" : "bg-secondary/30 border-border"}`}
+                                    >
+                                        <div className={`w-4 h-4 rounded flex items-center justify-center ${editLawyerIds.includes(l.id) ? "bg-violet-500" : "border border-muted-foreground/30"}`}>
+                                            {editLawyerIds.includes(l.id) && <Check className="w-3 h-3 text-white" />}
+                                        </div>
+                                        <span className="text-xs">{l.name}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setEditingCaller(null)} className="border-border">Cancelar</Button>
+                        <Button onClick={handleUpdateCaller} disabled={updatingCaller} className="bg-violet-600 hover:bg-violet-700 text-white">
+                            {updatingCaller ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                            Salvar Alterações
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </Layout>
     );
 }
