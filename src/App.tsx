@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth, AuthProvider } from "@/hooks/useAuth";
 import Auth from "./pages/Auth";
 import Index from "./pages/Index";
 import NewCase from "./pages/NewCase";
@@ -52,20 +52,22 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/auth" element={<AuthRoute><Auth /></AuthRoute>} />
-          <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-          <Route path="/new-case" element={<AdminRoute><NewCase /></AdminRoute>} />
-          <Route path="/case/:id" element={<ProtectedRoute><CaseDetail /></ProtectedRoute>} />
-          <Route path="/clients" element={<AdminRoute><Clients /></AdminRoute>} />
-          <Route path="/client/:id" element={<AdminRoute><ClientDetail /></AdminRoute>} />
-          <Route path="/settings" element={<AdminRoute><Settings /></AdminRoute>} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+      <AuthProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/auth" element={<AuthRoute><Auth /></AuthRoute>} />
+            <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+            <Route path="/new-case" element={<AdminRoute><NewCase /></AdminRoute>} />
+            <Route path="/case/:id" element={<ProtectedRoute><CaseDetail /></ProtectedRoute>} />
+            <Route path="/clients" element={<AdminRoute><Clients /></AdminRoute>} />
+            <Route path="/client/:id" element={<AdminRoute><ClientDetail /></AdminRoute>} />
+            <Route path="/settings" element={<AdminRoute><Settings /></AdminRoute>} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );

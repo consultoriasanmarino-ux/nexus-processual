@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 
@@ -10,12 +10,27 @@ export interface CallerInfo {
   lawyer_ids: string[];
 }
 
-export function useAuth() {
+interface AuthContextType {
+  user: User | null;
+  session: Session | null;
+  loading: boolean;
+  role: UserRole;
+  setRole: (r: UserRole) => void;
+  callerInfo: CallerInfo | null;
+  setCallerInfo: (info: CallerInfo | null) => void;
+  isAdmin: boolean;
+  isCaller: boolean;
+  signOut: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Role management via localStorage
+  // Role management via localStorage - initialized IMMEDIATELY
   const [role, setRoleState] = useState<UserRole>(() => {
     return (localStorage.getItem("nexus_role") as UserRole) || "admin";
   });
@@ -64,5 +79,17 @@ export function useAuth() {
   const isAdmin = role === "admin";
   const isCaller = role === "caller";
 
-  return { user, session, loading, signOut, role, setRole, callerInfo, setCallerInfo, isAdmin, isCaller };
+  return (
+    <AuthContext.Provider value={{ user, session, loading, signOut, role, setRole, callerInfo, setCallerInfo, isAdmin, isCaller }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
 }

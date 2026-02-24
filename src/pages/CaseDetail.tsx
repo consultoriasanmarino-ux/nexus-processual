@@ -12,7 +12,6 @@ import { getStatusInfo, type Case, type Document, type Conversation, type Messag
 import { CaseSummaryTab } from "@/components/CaseSummaryTab";
 import { DocumentsTab } from "@/components/DocumentsTab";
 import { ConversationsTab } from "@/components/ConversationsTab";
-import { MessageGeneratorTab } from "@/components/MessageGeneratorTab";
 import { CaseExportModal } from "@/components/CaseExportModal";
 import { formatPhone, formatProcessNumber } from "@/lib/utils";
 
@@ -190,9 +189,6 @@ export default function CaseDetail() {
             <TabsTrigger value="conversations" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <MessageSquare className="w-4 h-4 mr-1.5" /> Conversas
             </TabsTrigger>
-            <TabsTrigger value="generator" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Sparkles className="w-4 h-4 mr-1.5" /> Gerador IA
-            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="summary">
@@ -209,9 +205,6 @@ export default function CaseDetail() {
               messages={messages}
               onRefresh={fetchAll}
             />
-          </TabsContent>
-          <TabsContent value="generator">
-            <MessageGeneratorTab caseData={caseData} documents={documents} aiOutputs={aiOutputs} onRefresh={fetchAll} />
           </TabsContent>
         </Tabs>
       </div>

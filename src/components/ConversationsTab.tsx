@@ -44,7 +44,12 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
 
   const clientName = (caseData as any).clients?.full_name || "Cliente";
   const firstName = toTitleCase(clientName.split(" ")[0]);
-  const initialMessage = `Olá, ${firstName}! Tenho novidades sobre sua ação de revisão...`;
+
+  // Use AI summary from caseData if available, otherwise fallback to generic
+  const aiSummary = caseData.case_summary || "";
+  const initialMessage = aiSummary
+    ? `Olá, ${firstName}! Fizemos a análise do seu caso: ${aiSummary}`
+    : `Olá, ${firstName}! Tenho novidades sobre sua ação...`;
 
   const addMessage = async (sender: string, text: string) => {
     if (!user || !conversationId) return;
