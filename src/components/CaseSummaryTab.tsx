@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Sparkles, Loader2, AlertTriangle, Building2, User, Gavel, Save, BookOpen, DollarSign, CalendarIcon, ClipboardList, Phone, Pencil, Car, Banknote, BriefcaseIcon, Milestone, MessageSquare, Plus } from "lucide-react";
+import { Sparkles, Loader2, AlertTriangle, Building2, User, Gavel, Save, BookOpen, DollarSign, CalendarIcon, ClipboardList, Phone, Pencil, Car, Banknote, BriefcaseIcon, Milestone, MessageSquare, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import type { Case, Document, AiOutput } from "@/lib/types";
 import ReactMarkdown from "react-markdown";
@@ -61,9 +61,32 @@ function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () =
   const phones = client.phone?.split(/[\s,;|]+/).filter(Boolean) || [];
   const contractPhones = client.phone_contract?.split(/[\s,;|]+/).filter(Boolean) || [];
 
+  const isBlacklisted = (p: string) => {
+    const clean = p.replace(/\D/g, "");
+    return client.notes?.includes(`[NO-WA:${clean}]`);
+  };
+
   const isWA = (p: string) => {
     const clean = p.replace(/\D/g, "");
+    if (isBlacklisted(clean)) return false;
     return clean.length === 11 && clean[2] === "9";
+  };
+
+  const toggleWA = async (p: string) => {
+    const clean = p.replace(/\D/g, "");
+    let newNotes = client.notes || "";
+    const marker = `[NO-WA:${clean}]`;
+
+    if (newNotes.includes(marker)) {
+      newNotes = newNotes.replace(marker, "").trim();
+      toast.success("Número marcado como WhatsApp disponível!");
+    } else {
+      newNotes = (newNotes + " " + marker).trim();
+      toast.info("Marcado como Sem WhatsApp.");
+    }
+
+    const { error } = await supabase.from("clients").update({ notes: newNotes }).eq("id", client.id);
+    if (!error) onRefresh();
   };
 
   const openWhatsApp = (p: string) => {
@@ -92,6 +115,7 @@ function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () =
           <div className="flex flex-wrap gap-2">
             {phones.length > 0 ? phones.map((p, idx) => {
               const wa = isWA(p);
+              const blacklisted = isBlacklisted(p);
               return (
                 <div key={idx} className={cn(
                   "flex items-center gap-2 border rounded-lg px-2.5 py-1.5 group transition-all",
@@ -100,8 +124,13 @@ function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () =
                   {wa ? <MessageSquare className="w-3 h-3 text-[#25D366]" /> : <Phone className="w-3 h-3 text-muted-foreground" />}
                   <span className={cn("text-xs font-semibold", !wa && "text-muted-foreground")}>{formatPhone(p)}</span>
                   <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => openWhatsApp(p)} title={wa ? "Abrir no WhatsApp" : "Tentar WhatsApp (Fixo)"} className={cn("hover:scale-110 transition-transform", wa ? "text-[#25D366]" : "text-muted-foreground")}>
-                      <MessageSquare className="w-3.5 h-3.5" />
+                    {wa && (
+                      <button onClick={() => openWhatsApp(p)} title="Abrir no WhatsApp" className="text-[#25D366] hover:scale-110 transition-transform">
+                        <MessageSquare className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button onClick={() => toggleWA(p)} title={blacklisted ? "Ativar WhatsApp" : "Desativar WhatsApp"} className={cn("transition-colors", blacklisted ? "text-primary" : "text-muted-foreground hover:text-destructive")}>
+                      {blacklisted ? <MessageSquare className="w-3 h-3" /> : <X className="w-3 h-3" />}
                     </button>
                     <button onClick={() => startEditing("phone", client.phone)} className="text-muted-foreground hover:text-foreground">
                       <Pencil className="w-3 h-3" />
@@ -136,6 +165,7 @@ function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () =
           <div className="flex flex-wrap gap-2">
             {contractPhones.length > 0 ? contractPhones.map((p, idx) => {
               const wa = isWA(p);
+              const blacklisted = isBlacklisted(p);
               return (
                 <div key={idx} className={cn(
                   "flex items-center gap-2 border rounded-lg px-2.5 py-1.5 group transition-all",
@@ -144,8 +174,13 @@ function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () =
                   {wa ? <MessageSquare className="w-3 h-3 text-[#25D366]" /> : <Phone className="w-3 h-3 text-muted-foreground" />}
                   <span className={cn("text-xs font-bold", !wa ? "text-muted-foreground" : "text-foreground")}>{formatPhone(p)}</span>
                   <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => openWhatsApp(p)} title={wa ? "Abrir no WhatsApp" : "Tentar WhatsApp (Fixo)"} className={cn("hover:scale-110 transition-transform", wa ? "text-[#25D366]" : "text-muted-foreground")}>
-                      <MessageSquare className="w-3.5 h-3.5" />
+                    {wa && (
+                      <button onClick={() => openWhatsApp(p)} title="Abrir no WhatsApp" className="text-[#25D366] hover:scale-110 transition-transform">
+                        <MessageSquare className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button onClick={() => toggleWA(p)} title={blacklisted ? "Ativar WhatsApp" : "Desativar WhatsApp"} className={cn("transition-colors", blacklisted ? "text-primary" : "text-muted-foreground hover:text-destructive")}>
+                      {blacklisted ? <MessageSquare className="w-3 h-3" /> : <X className="w-3 h-3" />}
                     </button>
                     <button onClick={() => startEditing("phone_contract", client.phone_contract)} className="text-muted-foreground hover:text-foreground">
                       <Pencil className="w-3 h-3" />

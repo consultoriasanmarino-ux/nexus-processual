@@ -196,7 +196,11 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
             const uniquePhones = Array.from(new Set(allPhones.map(p => p.replace(/\D/g, ""))));
 
             // Heuristic para Brasil: 11 dígitos começando com 9 = Celular (WhatsApp)
-            const isWhatsApp = (p: string) => p.length === 11 && p[2] === "9";
+            const isBlacklisted = (p: string) => client?.notes?.includes(`[NO-WA:${p}]`);
+            const isWhatsApp = (p: string) => {
+              if (isBlacklisted(p)) return false;
+              return p.length === 11 && p[2] === "9";
+            };
             const waNumbers = uniquePhones.filter(isWhatsApp);
             const fixedNumbers = uniquePhones.filter(p => !isWhatsApp(p));
 
