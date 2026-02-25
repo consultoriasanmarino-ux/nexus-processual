@@ -325,6 +325,7 @@ export default function NewCase() {
     lawyerType: string;
     selectedLawyerId: string;
     pdfFile: File | null;
+    preExtractedText?: string;
     extractedJson: any;
   }) => {
     if (!user) throw new Error("Usuário não autenticado");
@@ -410,7 +411,8 @@ export default function NewCase() {
     if (data.pdfFile) {
       const filePath = `${user.id}/${caseResult.id}/${data.pdfFile.name}`;
       await supabase.storage.from("documents").upload(filePath, data.pdfFile);
-      const pdfText = await extractTextFromPdf(data.pdfFile).catch(() => "");
+
+      const pdfText = data.preExtractedText || await extractTextFromPdf(data.pdfFile).catch(() => "");
 
       // Update extracted JSON with user-confirmed values
       const finalJson = {
@@ -584,7 +586,7 @@ export default function NewCase() {
 
     const zip = await JSZip.loadAsync(zipFile);
     let completedCount = 0;
-    const CONCURRENCY = 4; // Process 4 folders at a time
+    const CONCURRENCY = 8; // Process 8 folders at a time
     const foldersToProcess = [...zipFolders];
 
     const processFolder = async (folderName: string) => {
@@ -621,7 +623,7 @@ export default function NewCase() {
           txtContent = await txtBlob.text();
         }
 
-        // 3. Extract text from PDF (ofício)
+        // 3. Extract text from PDF (ofício) - Extract ONCE here
         const pdfBlob = await (pdfEntry as JSZip.JSZipObject).async("blob");
         const pdfFileName = (pdfEntry as JSZip.JSZipObject).name.split("/").pop() || "oficio.pdf";
         const pdfFile = new File([pdfBlob], pdfFileName, { type: "application/pdf" });
@@ -651,7 +653,7 @@ export default function NewCase() {
           }
         }
 
-        // 6. Save automatically
+        // 6. Save automatically - Pass pre-extracted text to avoid double work
         await performSave({
           clientName: clientNameFinal,
           clientCpf: ext.client_cpf || "",
@@ -672,6 +674,7 @@ export default function NewCase() {
           lawyerType,
           selectedLawyerId,
           pdfFile: pdfFile,
+          preExtractedText: oficioText, // New parameter to avoid re-extraction
           extractedJson: { ...ext, source: "zip_import", folder_name: folderName, txt_content: txtContent }
         });
 
