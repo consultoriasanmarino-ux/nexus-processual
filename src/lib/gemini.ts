@@ -386,25 +386,23 @@ export async function aiAnalyzeOficio(params: {
     const txtData = parseTxtProcesso(txtContent);
 
     // Step 2: Use AI ONLY for the ofício PDF to get financial data & case type details
-    const systemPrompt = `Você é um especialista em análise de ofícios judiciais.
-Sua tarefa é extrair APENAS as informações que estão NO OFÍCIO que NÃO estão disponíveis no TXT já parseado.
+    const systemPrompt = `Você é um especialista em análise de OFÍCIOS JUDICIAIS (RPV, Precatório, Alvará).
+Sua tarefa é extrair o VALOR FINANCEIRO que o cliente tem a receber.
 
-INFORMAÇÕES JÁ EXTRAÍDAS DO TXT (NÃO REPITA, apenas complemente):
+IMPORTANTE: O ofício geralmente contém o valor principal que o banco ou réu deve depositar. 
+Procure por:
+- "Valor da Causa", "Valor do Depósito", "Total devido"
+- "Valor Incontroverso" (Este é o valor que já pode ser liberado)
+- "Diferença devida" ou "Valor Remanescente"
+- "Dá-se à causa o valor de..."
+- "Solicito o depósito da importância de R$..."
+- "RPV" ou "Precatório" seguido de um valor.
+
+INFORMAÇÕES JÁ EXTRAÍDAS (Use para contexto, mas priorize o OFÍCIO para valores):
 - Nome do Cliente: ${txtData.client_name || "não encontrado"}
 - CPF: ${txtData.client_cpf || "não encontrado"}
 - Réu: ${txtData.defendant || "não encontrado"}
 - Processo: ${txtData.process_number || "não encontrado"}
-- Classe: ${txtData.classe || "não encontrada"}
-- Tribunal: ${txtData.tribunal || "não encontrado"}
-- Órgão Julgador: ${txtData.orgao_julgador || "não encontrado"}
-
-O QUE PRECISO QUE VOCÊ EXTRAIA DO OFÍCIO:
-1. VALOR DA CAUSA / RPV / Precatório / Valor a depositar (o que encontrar)
-2. Tipo de ação mais detalhado (baseado no conteúdo do ofício)
-3. Advogados mencionados no ofício (nome e OAB)
-4. Qualquer valor financeiro mencionado
-5. Escritório de advocacia se mencionado
-6. Resumo em 2-3 frases sobre o que é o caso
 
 Responda APENAS com JSON:
 {
@@ -413,10 +411,10 @@ Responda APENAS com JSON:
   "lawyer_fee_percent": 0.00,
   "lawyer_fee_value": 0.00,
   "client_net_value": 0.00,
-  "case_type_detail": "TIPO DETALHADO DA AÇÃO",
+  "case_type_detail": "TIPO DETALHADO (ex: RPV - Incontroverso)",
   "lawyers": [{"name": "...", "oab": "...", "role": "..."}],
   "partner_law_firm": "ESCRITÓRIO",
-  "summary": "RESUMO_DO_CASO"
+  "summary": "RESUMO_CURTO_SOBRE_O_VALOR_E_ORIGEM"
 }`;
 
     const MAX_TOTAL = 10000;
@@ -464,16 +462,15 @@ Responda APENAS com JSON:
                 : txtData.tribunal,
             process_number: txtData.process_number,
             case_value: aiData?.case_value || 0,
-            principal_value: aiData?.principal_value || 0,
+            principal_value: aiData?.principal_value || (aiData?.case_value || 0),
             lawyer_fee_percent: aiData?.lawyer_fee_percent || 0,
             lawyer_fee_value: aiData?.lawyer_fee_value || 0,
-            client_net_value: aiData?.client_net_value || 0,
+            client_net_value: aiData?.client_net_value || (aiData?.case_value || 0),
             lawyers: aiData?.lawyers || [],
             partner_law_firm: aiData?.partner_law_firm || "",
             phone_contract: bestPhone,
             all_phones: allPhones.join(", "),
             summary: aiData?.summary || `${txtData.classe || "Processo"} — ${txtData.client_name} vs ${txtData.defendant}`,
-            // Extra data from TXT
             client_birth_date: txtData.client_birth_date,
             client_age: txtData.client_age,
             client_income: txtData.client_income,
@@ -488,7 +485,7 @@ Responda APENAS com JSON:
 
         return { success: true, extracted: merged };
     } catch (err: any) {
-        // If AI fails, still return TXT data (better than nothing)
+        // --- FALLBACK HEURISTIC (NO AI) ---
         const allPhones = txtData.client_phones;
         const mobile = allPhones.find(p => {
             const digits = p.replace(/\D/g, "");
@@ -501,25 +498,40 @@ Responda APENAS com JSON:
             fullDefendant += " / " + txtData.additional_defendants.map(d => d.name).join(" / ");
         }
 
+        // Tenta extrair valor da causa via Regex se a IA falhar
+        let detectedValue = 0;
+        const textToSearch = (oficioText || "").substring(0, 15000);
+        // Procura por "Valor da Causa: R$ 1.234,56" ou similar
+        const valueRegex = /(?:valor|causa|total|devido|dep[óo]sito|r\$|montante|r\s\$)\s*[:\-\s]*([0-9\.\,]+)/gi;
+        let match;
+        const candidates: number[] = [];
+        while ((match = valueRegex.exec(textToSearch)) !== null) {
+            const clean = match[1].replace(/\./g, "").replace(",", ".");
+            const num = parseFloat(clean);
+            if (!isNaN(num) && num > 100) candidates.push(num);
+        }
+        // Pega o maior valor encontrado que pareça uma causa (acima de 100 reais)
+        detectedValue = candidates.length > 0 ? Math.max(...candidates) : 0;
+
         const fallback = {
             client_name: txtData.client_name,
             client_cpf: txtData.client_cpf,
             defendant: fullDefendant,
-            case_type: txtData.classe || "",
+            case_type: txtData.classe || "Processo Judicial",
             court: txtData.orgao_julgador
                 ? `${txtData.orgao_julgador} — ${txtData.tribunal}`
-                : txtData.tribunal,
+                : txtData.tribunal || "Tribunal não identificado",
             process_number: txtData.process_number,
-            case_value: 0,
-            principal_value: 0,
+            case_value: detectedValue,
+            principal_value: detectedValue,
             lawyer_fee_percent: 0,
             lawyer_fee_value: 0,
-            client_net_value: 0,
+            client_net_value: detectedValue,
             lawyers: [],
             partner_law_firm: "",
             phone_contract: bestPhone,
             all_phones: allPhones.join(", "),
-            summary: `${txtData.classe || "Processo"} — ${txtData.client_name} vs ${txtData.defendant}. (Análise do ofício falhou: ${err.message})`,
+            summary: `IMPORTAÇÃO RÁPIDA: ${txtData.client_name} vs ${txtData.defendant}. (Análise IA falhou: ${err.message})`,
             client_birth_date: txtData.client_birth_date,
             client_age: txtData.client_age,
             client_income: txtData.client_income,
@@ -532,7 +544,7 @@ Responda APENAS com JSON:
             classe_processual: txtData.classe,
         };
 
-        console.warn(`AI falhou para ofício, usando apenas dados do TXT:`, err.message);
+        console.warn(`AI falhou para ofício, usando heurística regex:`, err.message);
         return { success: true, extracted: fallback };
     }
 }
