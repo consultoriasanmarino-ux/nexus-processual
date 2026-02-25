@@ -5,7 +5,7 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Trash2, Save, Loader2, Scale, UserCheck, Headphones, ShieldCheck, Phone, Check, Key, Sparkles, Pencil, CheckSquare, Square } from "lucide-react";
+import { Plus, Trash2, Save, Loader2, Scale, UserCheck, Headphones, ShieldCheck, Phone, Check, Key, Sparkles, Pencil, CheckSquare, Square, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import type { Lawyer, Caller } from "@/lib/types";
 import {
