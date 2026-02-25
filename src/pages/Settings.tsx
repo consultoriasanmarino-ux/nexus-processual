@@ -31,46 +31,65 @@ export default function Settings() {
         if (!confirm("Isso irá formatar e limpar os números de telefone de TODOS os clientes para o formato WhatsApp. Continuar?")) return;
         setCleaning(true);
         try {
-            const { data: clients } = await supabase.from("clients").select("id, phone, phone_contract");
+            const { data: clients, error: fetchError } = await supabase.from("clients").select("id, phone, phone_contract");
+            if (fetchError) throw fetchError;
             if (!clients) return;
 
             setCleanStats({ total: clients.length, updated: 0 });
             let updatedCount = 0;
 
+            if (clients.length === 0) {
+                toast.info("Nenhum cliente encontrado para processar no seu acesso.");
+                setCleaning(false);
+                return;
+            }
+
+            toast.info(`Processando ${clients.length} clientes...`);
+
+            const smartClean = (val: string) => {
+                if (!val) return "";
+                let digits = val.replace(/\D/g, "");
+
+                if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+                    digits = digits.substring(2);
+                }
+
+                const normalized: string[] = [];
+                let remaining = digits;
+
+                while (remaining.length >= 10) {
+                    const isMobile = remaining.length >= 11 && remaining[2] === "9";
+                    const size = isMobile ? 11 : 10;
+                    normalized.push(remaining.substring(0, size));
+                    remaining = remaining.substring(size);
+                }
+
+                if (normalized.length === 0) return digits;
+                if (normalized.length === 1 && remaining.length === 0) return normalized[0];
+
+                return normalized.join(" ");
+            };
+
             for (const client of clients) {
-                const smartClean = (val: string) => {
-                    if (!val) return "";
-                    // Pega apenas dígitos e organiza em blocos de 10 ou 11
-                    const digits = val.replace(/\D/g, "");
-                    if (digits.length <= 11) return digits;
-
-                    const normalized: string[] = [];
-                    let remaining = digits;
-                    while (remaining.length >= 10) {
-                        const isMobile = remaining.length >= 11 && remaining[2] === "9";
-                        const size = isMobile ? 11 : 10;
-                        normalized.push(remaining.substring(0, size));
-                        remaining = remaining.substring(size);
-                    }
-                    return normalized.join(" "); // Separa por espaço para não virar um blocão
-                };
-
                 const p1 = smartClean(client.phone || "");
                 const p2 = smartClean(client.phone_contract || "");
 
-                if (p1 !== client.phone || p2 !== client.phone_contract) {
-                    await supabase.from("clients").update({
-                        phone: p1,
-                        phone_contract: p2
-                    }).eq("id", client.id);
-                    updatedCount++;
-                    setCleanStats(prev => ({ ...prev, updated: updatedCount }));
+                if (p1 !== (client.phone || "") || p2 !== (client.phone_contract || "")) {
+                    const { error: updateError } = await supabase
+                        .from("clients")
+                        .update({ phone: p1, phone_contract: p2 } as any)
+                        .eq("id", client.id);
+
+                    if (!updateError) {
+                        updatedCount++;
+                        setCleanStats(prev => ({ ...prev, updated: updatedCount }));
+                    }
                 }
             }
-            toast.success(`Limpeza concluída! ${updatedCount} clientes atualizados.`);
-        } catch (err) {
+            toast.success(`Limpeza concluída! ${updatedCount} clientes de ${clients.length} foram corrigidos.`);
+        } catch (err: any) {
             console.error(err);
-            toast.error("Erro na limpeza.");
+            toast.error("Erro na limpeza: " + err.message);
         } finally {
             setCleaning(false);
         }
