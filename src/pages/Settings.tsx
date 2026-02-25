@@ -109,10 +109,72 @@ export default function Settings() {
         setSavingLawyer(false);
     };
 
-    const handleDeleteLawyer = async (id: string) => {
-        const { error } = await supabase.from("lawyers" as any).delete().eq("id", id);
-        if (error) toast.error("Erro ao excluir advogado.");
-        else { toast.success("Advogado removido."); setLawyers((prev) => prev.filter((l) => l.id !== id)); }
+    // Nuclear Delete state
+    const [deletingLawyerId, setDeletingLawyerId] = useState<string | null>(null);
+    const [isDeletingNuclear, setIsDeletingNuclear] = useState(false);
+
+    const handleDeleteLawyer = async () => {
+        if (!deletingLawyerId || !user) return;
+
+        setIsDeletingNuclear(true);
+        try {
+            // 1. Get all cases for this lawyer
+            const { data: lawyerCases } = await supabase
+                .from("cases")
+                .select("id, client_id")
+                .eq("lawyer_id", deletingLawyerId);
+
+            const caseIds = lawyerCases?.map(c => c.id) || [];
+            const clientIds = Array.from(new Set(lawyerCases?.map(c => c.client_id).filter(Boolean) || []));
+
+            if (caseIds.length > 0) {
+                // 2. Delete documents (and try to delete from storage if possible, though bulk storage delete is harder)
+                // For now, delete from DB
+                await supabase.from("documents").delete().in("case_id", caseIds);
+
+                // 3. Delete conversations
+                await supabase.from("conversations").delete().in("case_id", caseIds);
+
+                // 4. Delete cases
+                await supabase.from("cases").delete().in("id", caseIds);
+
+                // 5. Delete clients only if they have no other cases? 
+                // The user was emphatic: "apaga todos os casos e clientes também! Tudo!"
+                // To be safe and follow instructions: delete these clients.
+                if (clientIds.length > 0) {
+                    await supabase.from("clients").delete().in("id", clientIds);
+                }
+            }
+
+            // 6. Update callers to remove this lawyer ID from their array
+            const { data: allCallers } = await supabase.from("callers" as any).select("*");
+            if (allCallers) {
+                for (const caller of allCallers) {
+                    if (caller.lawyer_ids?.includes(deletingLawyerId)) {
+                        const newIds = caller.lawyer_ids.filter((id: string) => id !== deletingLawyerId);
+                        await supabase
+                            .from("callers" as any)
+                            .update({ lawyer_ids: newIds } as any)
+                            .eq("id", caller.id);
+                    }
+                }
+            }
+
+            // 7. Finally, delete the lawyer
+            const { error } = await supabase.from("lawyers" as any).delete().eq("id", deletingLawyerId);
+
+            if (error) throw error;
+
+            toast.success("Advogado e todos os dados vinculados foram apagados!");
+            setLawyers((prev) => prev.filter((l) => l.id !== deletingLawyerId));
+            setDeletingLawyerId(null);
+            fetchCallers(); // Refresh callers list too
+        } catch (err: any) {
+            console.error(err);
+            toast.error("Erro ao realizar limpeza completa.");
+        } finally {
+            setIsDeletingNuclear(false);
+        }
     };
 
     // ========== CALLERS ==========
@@ -418,7 +480,7 @@ export default function Settings() {
                                                     {lawyer.specialty && <span>• {lawyer.specialty}</span>}
                                                 </div>
                                             </div>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all" onClick={() => handleDeleteLawyer(lawyer.id)}>
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all" onClick={() => setDeletingLawyerId(lawyer.id)}>
                                                 <Trash2 className="w-4 h-4" />
                                             </Button>
                                         </div>
@@ -686,6 +748,45 @@ export default function Settings() {
                         <Button onClick={handleUpdateCaller} disabled={updatingCaller} className="bg-violet-600 hover:bg-violet-700 text-white">
                             {updatingCaller ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
                             Salvar Alterações
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+            {/* Nuclear Delete Confirmation Dialog */}
+            <Dialog open={!!deletingLawyerId} onOpenChange={(open) => !open && !isDeletingNuclear && setDeletingLawyerId(null)}>
+                <DialogContent className="max-w-md bg-card border-destructive/20 shadow-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-destructive">
+                            <AlertTriangle className="w-5 h-5" /> EXCLUSÃO TOTAL (NUCLEAR)
+                        </DialogTitle>
+                        <DialogDescription className="text-foreground font-medium pt-2">
+                            Você está prestes a apagar o advogado "{lawyers.find(l => l.id === deletingLawyerId)?.name}".
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 space-y-3">
+                        <p className="text-xs text-destructive-foreground font-bold uppercase tracking-wider">Atenção! Esta ação apagará:</p>
+                        <ul className="text-[11px] space-y-1 text-destructive-foreground/80 list-disc pl-4">
+                            <li>O cadastro do advogado permanentemente.</li>
+                            <li>**TODOS** os casos vinculados a este advogado.</li>
+                            <li>**TODOS** os clientes vinculados a esses casos.</li>
+                            <li>**TODOS** os documentos e conversas desses casos.</li>
+                            <li>Removerá o acesso de todos os tecladores a este advogado.</li>
+                        </ul>
+                    </div>
+
+                    <DialogFooter className="mt-4">
+                        <Button variant="outline" onClick={() => setDeletingLawyerId(null)} disabled={isDeletingNuclear}>
+                            Cancelar
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleDeleteLawyer}
+                            disabled={isDeletingNuclear}
+                            className="bg-destructive hover:bg-destructive/90 text-white font-bold"
+                        >
+                            {isDeletingNuclear ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                            APAGAR TUDO (NUCLEAR)
                         </Button>
                     </DialogFooter>
                 </DialogContent>
