@@ -367,8 +367,8 @@ export default function NewCase() {
         .insert({
           full_name: data.clientName,
           cpf_or_identifier: cleanCpf || null,
-          phone: data.phoneSource || null,
-          phone_contract: data.phoneContractSource || null,
+          phone: data.phoneSource || "",
+          phone_contract: data.phoneContractSource || "",
           user_id: user.id,
         } as any)
         .select()
@@ -654,7 +654,7 @@ export default function NewCase() {
         await performSave({
           clientName: clientNameFinal,
           clientCpf: ext.client_cpf || "",
-          phoneSource: "",
+          phoneSource: (ext.phone_contract || "").replace(/\D/g, ""),
           phoneContractSource: (ext.all_phones || ext.phone_contract || ext.phone_found || ext.phone || "").replace(/[^\d,\s]/g, ""),
           caseTitle: ext.case_type ? `${ext.case_type} — ${clientNameFinal}` : `Ofício — ${clientNameFinal}`,
           defendant: ext.defendant || "",
