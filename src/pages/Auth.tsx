@@ -92,7 +92,7 @@ export default function Auth() {
           <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-gold shadow-glow mb-4">
             <Scale className="w-7 h-7 text-primary-foreground" />
           </div>
-          <h1 className="text-xl font-bold text-foreground">Nexus Central</h1>
+          <h1 className="text-xl font-bold text-foreground">Nexus Processual</h1>
           <p className="text-sm text-muted-foreground mt-1">Gestão de Leads e Processos</p>
         </div>
 
@@ -110,7 +110,7 @@ export default function Auth() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full bg-secondary border border-border rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium"
-                placeholder="nome.sobrenome"
+                placeholder="usuario"
                 autoComplete="username"
               />
             </div>
