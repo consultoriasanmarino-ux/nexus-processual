@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Briefcase, User, Calendar, Hash, Trash2, AlertTriangle, Trash, Eye, EyeOff } from "lucide-react";
+import { Plus, Search, Briefcase, User, Calendar, Hash, Trash2, AlertTriangle, Trash, Eye, EyeOff, Files } from "lucide-react";
 import { getStatusInfo, type Case, type Lawyer } from "@/lib/types";
 import { CaseCardExport } from "@/components/CaseCardExport";
 import { toast } from "sonner";
@@ -15,7 +15,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { PinConfirmDialog } from "@/components/PinConfirmDialog";
-import { formatProcessNumber } from "@/lib/utils";
+import { formatPhone, formatCPF, formatProcessNumber } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // Color palette for lawyer tabs
 const LAWYER_COLORS = [
@@ -45,6 +52,7 @@ export default function Index() {
   const [activeTab, setActiveTab] = useState("todos");
   const [markedCases, setMarkedCases] = useState<Set<string>>(new Set());
   const [showMarked, setShowMarked] = useState(true);
+  const [selectedGroup, setSelectedGroup] = useState<Case[] | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -164,28 +172,47 @@ export default function Index() {
 
   // Group cases by client (Name + CPF) to sync information visually
   const clientAggregates = useMemo(() => {
-    const groups: Record<string, { count: number; phone: string | null; phone_contract: string | null }> = {};
+    const groups: Record<string, { count: number; phone: string | null; phone_contract: string | null; cases: Case[] }> = {};
 
     cases.forEach((c) => {
       const client = (c as any).clients;
       if (!client) return;
 
-      // Use CPF as primary key, fallback to normalized name
       const key = client.cpf_or_identifier?.replace(/\D/g, "") || client.full_name.toLowerCase().trim();
 
       if (!groups[key]) {
-        groups[key] = { count: 0, phone: null, phone_contract: null };
+        groups[key] = { count: 0, phone: null, phone_contract: null, cases: [] };
       }
 
       groups[key].count += 1;
+      groups[key].cases.push(c);
 
-      // Accumulate the best available phone
       if (!groups[key].phone && client.phone) groups[key].phone = client.phone;
       if (!groups[key].phone_contract && client.phone_contract) groups[key].phone_contract = client.phone_contract;
     });
 
     return groups;
   }, [cases]);
+
+  // Grouped filtered view
+  const groupedFiltered = useMemo(() => {
+    const groups: Record<string, Case[]> = {};
+    const order: string[] = [];
+
+    filtered.forEach((c) => {
+      const client = (c as any).clients;
+      if (!client) return;
+      const key = client.cpf_or_identifier?.replace(/\D/g, "") || client.full_name.toLowerCase().trim();
+
+      if (!groups[key]) {
+        groups[key] = [];
+        order.push(key);
+      }
+      groups[key].push(c);
+    });
+
+    return order.map(key => groups[key]);
+  }, [filtered]);
 
   // Toggle mark for a case (caller only)
   const toggleCaseMark = async (caseId: string) => {
@@ -347,29 +374,37 @@ export default function Index() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((c) => {
+            {groupedFiltered.map((group) => {
+              const c = group[0]; // Representing case
+              const multiple = group.length > 1;
               const status = getStatusInfo(c.status);
               const client = (c as any).clients;
               const caseColor = getCaseColor(c);
               const lawyerName = c.lawyer_type === "especifico" && c.lawyer_id
                 ? lawyers.find((l) => l.id === c.lawyer_id)?.name
                 : "Paulo Tanaka";
-              const isMarked = markedCases.has(c.id);
+
+              // A group is marked if ALL its cases are marked
+              const allMarked = isCaller && group.every(gc => markedCases.has(gc.id));
+              const hasChatActive = group.some(gc => gc.is_chat_active);
 
               return (
                 <div
-                  key={c.id}
-                  className={`relative group bg-gradient-to-br ${caseColor.bg} border ${caseColor.border} rounded-xl hover:shadow-lg transition-all animate-fade-in ${isMarked ? "opacity-50" : ""
+                  key={client?.id || c.id}
+                  className={`relative group bg-gradient-to-br ${caseColor.bg} border ${caseColor.border} rounded-xl hover:shadow-lg transition-all animate-fade-in ${allMarked ? "opacity-50" : ""
                     }`}
                 >
-                  <Link to={`/case/${c.id}`} className="block p-5">
+                  <div
+                    onClick={() => multiple ? setSelectedGroup(group) : navigate(`/case/${c.id}`)}
+                    className="block p-5 cursor-pointer"
+                  >
                     {/* Lawyer indicator */}
                     <div className="flex items-center gap-1.5 mb-3">
                       <div className={`w-1.5 h-1.5 rounded-full ${caseColor.dot}`} />
                       <span className={`text-[10px] font-semibold uppercase tracking-wider ${caseColor.accent}`}>
-                        {lawyerName}
+                        {multiple ? "Tratando Cliente" : lawyerName}
                       </span>
-                      {isMarked && (
+                      {allMarked && (
                         <span className="ml-auto text-[9px] bg-muted/40 text-muted-foreground px-1.5 py-0.5 rounded-full font-bold uppercase">
                           Concluído
                         </span>
@@ -378,14 +413,16 @@ export default function Index() {
 
                     <div className="flex items-start justify-between mb-3">
                       <h3 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors line-clamp-2 pr-6">
-                        {c.case_title}
+                        {multiple ? `${group.length} PROCESSOS ENCONTRADOS` : c.case_title}
                       </h3>
-                      <span className={`${status.color} text-[10px] font-semibold px-2 py-0.5 rounded-full text-foreground flex-shrink-0`}>
-                        {status.label}
-                      </span>
+                      {!multiple && (
+                        <span className={`${status.color} text-[10px] font-semibold px-2 py-0.5 rounded-full text-foreground flex-shrink-0`}>
+                          {status.label}
+                        </span>
+                      )}
                     </div>
 
-                    {c.is_chat_active && (
+                    {hasChatActive && (
                       <div className="absolute top-14 right-4 flex items-center gap-1.5 px-2 py-1 bg-success/10 rounded-lg animate-pulse border border-success/20 shadow-glow-success">
                         <div className="w-1.5 h-1.5 rounded-full bg-success shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
                         <span className="text-[10px] font-bold text-success uppercase tracking-wider">Atendendo</span>
@@ -395,30 +432,41 @@ export default function Index() {
                     {client && (() => {
                       const clientKey = client.cpf_or_identifier?.replace(/\D/g, "") || client.full_name.toLowerCase().trim();
                       const aggregate = clientAggregates[clientKey];
+                      const totalCases = aggregate?.count || 1;
                       const hasPhone = aggregate?.phone || aggregate?.phone_contract || client.phone || client.phone_contract;
 
                       return (
                         <>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                            <User className="w-3 h-3" />
-                            <span className="truncate">{client.full_name}</span>
-                            {aggregate?.count > 1 && (
+                            <User className="w-4 h-4 text-primary/60" />
+                            <span className="font-bold text-foreground truncate">{client.full_name}</span>
+                            {totalCases > 1 && (
                               <span className="flex-shrink-0 bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[9px] font-bold border border-primary/20 uppercase animate-pulse">
-                                +{aggregate.count - 1} Outros
+                                +{totalCases - 1} Outros
                               </span>
                             )}
                           </div>
 
-                          {c.process_number && (
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                              <Hash className="w-3 h-3" />
-                              <span className="font-mono">{formatProcessNumber(c.process_number)}</span>
+                          {multiple ? (
+                            <div className="py-2 px-3 bg-white/5 rounded-lg border border-white/10 mt-2 mb-2">
+                              <p className="text-[10px] text-muted-foreground uppercase font-bold mb-1 tracking-tight">Processo mais recente:</p>
+                              <p className="text-xs font-semibold truncate text-primary/80">{c.case_title}</p>
+                              <p className="text-[10px] font-mono mt-0.5">{formatProcessNumber(c.process_number || "")}</p>
                             </div>
+                          ) : (
+                            <>
+                              {c.process_number && (
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                                  <Hash className="w-3 h-3" />
+                                  <span className="font-mono">{formatProcessNumber(c.process_number)}</span>
+                                </div>
+                              )}
+                            </>
                           )}
 
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                             <Calendar className="w-3 h-3" />
-                            <span>{new Date(c.created_at).toLocaleDateString("pt-BR")}</span>
+                            <span>{multiple ? "Vários processos" : new Date(c.created_at).toLocaleDateString("pt-BR")}</span>
                           </div>
 
                           {!hasPhone && (
@@ -430,24 +478,10 @@ export default function Index() {
                         </>
                       );
                     })()}
-                  </Link>
+                  </div>
 
-                  {/* Caller: Mark as done button */}
-                  {isCaller && (
-                    <button
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleCaseMark(c.id); }}
-                      className={`absolute bottom-3 right-3 text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border transition-all ${isMarked
-                        ? "bg-muted/30 text-muted-foreground border-border hover:bg-warning/10 hover:text-warning hover:border-warning/30"
-                        : "bg-success/10 text-success border-success/20 hover:bg-success/20"
-                        }`}
-                      title={isMarked ? "Reativar caso" : "Marcar como concluído"}
-                    >
-                      {isMarked ? "Reativar" : "✓ Concluído"}
-                    </button>
-                  )}
-
-                  {/* Admin: Delete & Export */}
-                  {isAdmin && (
+                  {/* Admin: Delete & Export (Only for single cases for now, or use first case) */}
+                  {!multiple && isAdmin && (
                     <>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
@@ -487,6 +521,60 @@ export default function Index() {
             })}
           </div>
         )}
+
+        {/* Case Selection Dialog */}
+        <Dialog open={!!selectedGroup} onOpenChange={(open) => !open && setSelectedGroup(null)}>
+          <DialogContent className="max-w-2xl bg-[#0a0a0c] border-white/10 shadow-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                <Files className="w-5 h-5 text-primary" />
+                Processos de {selectedGroup?.[0] && (selectedGroup[0] as any).clients?.full_name}
+              </DialogTitle>
+              <DialogDescription>
+                Este cliente possui múltiplos processos. Selecione um abaixo para abrir.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 mt-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+              {selectedGroup?.map((gc) => {
+                const status = getStatusInfo(gc.status);
+                const isMarked = markedCases.has(gc.id);
+                return (
+                  <div
+                    key={gc.id}
+                    onClick={() => {
+                      setSelectedGroup(null);
+                      navigate(`/case/${gc.id}`);
+                    }}
+                    className={`group relative p-4 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 hover:border-primary/30 transition-all cursor-pointer flex items-center justify-between ${isMarked ? "opacity-60" : ""}`}
+                  >
+                    <div className="flex-1 min-w-0 pr-4">
+                      <h4 className="font-bold text-sm truncate group-hover:text-primary transition-colors">
+                        {gc.case_title}
+                      </h4>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-[10px] font-mono text-muted-foreground">{formatProcessNumber(gc.process_number || "")}</span>
+                        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                          <Calendar className="w-3 h-3" /> {new Date(gc.created_at).toLocaleDateString("pt-BR")}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <span className={`${status.color} text-[9px] font-bold px-2 py-0.5 rounded-full text-foreground uppercase tracking-wider`}>
+                        {status.label}
+                      </span>
+                      {isMarked && (
+                        <span className="text-[8px] bg-muted/20 text-muted-foreground px-1.5 py-0.5 rounded-full font-bold uppercase border border-white/5">
+                          ✓ Concluído
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {isAdmin && (
           <PinConfirmDialog
