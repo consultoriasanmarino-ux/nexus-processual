@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
-import { aiAnalyze } from "@/lib/gemini";
+import { aiAnalyze, aiAnalyzeOficio } from "@/lib/gemini";
+import JSZip from "jszip";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -7,7 +8,7 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Upload, Loader2, Sparkles, FileText, CheckCircle2, AlertTriangle, Phone, Building2, Scale, Files, X, CheckCircle, AlertCircle } from "lucide-react";
+import { ArrowLeft, Upload, Loader2, Sparkles, FileText, CheckCircle2, AlertTriangle, Phone, Building2, Scale, Files, X, CheckCircle, AlertCircle, Archive, FolderOpen } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import * as pdfjsLib from "pdfjs-dist";
@@ -60,13 +61,21 @@ export default function NewCase() {
   const [extracted, setExtracted] = useState<ExtractedData | null>(null);
   const [saving, setSaving] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadMode, setUploadMode] = useState<"individual" | "bulk">("individual");
+  const [uploadMode, setUploadMode] = useState<"individual" | "bulk" | "zip">("individual");
 
   // Bulk Upload state
   const [bulkFiles, setBulkFiles] = useState<File[]>([]);
   const [processingBulk, setProcessingBulk] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(0);
   const [bulkStatus, setBulkStatus] = useState<Record<string, { status: 'pending' | 'processing' | 'success' | 'error', error?: string }>>({});
+
+  // ZIP Import state
+  const [zipFile, setZipFile] = useState<File | null>(null);
+  const [zipFolders, setZipFolders] = useState<string[]>([]);
+  const [processingZip, setProcessingZip] = useState(false);
+  const [zipProgress, setZipProgress] = useState(0);
+  const [zipStatus, setZipStatus] = useState<Record<string, { status: 'pending' | 'processing' | 'success' | 'error', error?: string }>>({});
+  const [zipExtracting, setZipExtracting] = useState(false);
 
   // Editable fields after extraction
   const [clientName, setClientName] = useState("");
@@ -422,7 +431,7 @@ export default function NewCase() {
       await supabase.from("documents").insert({
         case_id: caseResult.id,
         user_id: user.id,
-        doc_type: "petição inicial",
+        doc_type: data.extractedJson?.source === "zip_import" ? "ofício" : "petição inicial",
         file_url: filePath,
         extracted_text: pdfText || null,
         extracted_json: finalJson as any,
@@ -522,6 +531,170 @@ export default function NewCase() {
     toast.success("Processamento em massa finalizado!");
   };
 
+  // ==================== ZIP IMPORT ====================
+
+  const handleZipSelected = async (file: File) => {
+    setZipFile(file);
+    setZipExtracting(true);
+    setZipFolders([]);
+
+    try {
+      const zip = await JSZip.loadAsync(file);
+      const folderSet = new Set<string>();
+
+      zip.forEach((relativePath, _entry) => {
+        // Get top-level folder name
+        const parts = relativePath.split("/");
+        if (parts.length >= 2 && parts[0]) {
+          folderSet.add(parts[0]);
+        }
+      });
+
+      const folders = Array.from(folderSet).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
+      setZipFolders(folders);
+
+      if (folders.length === 0) {
+        toast.error("Nenhuma pasta encontrada no ZIP. Verifique a estrutura.");
+      } else {
+        toast.success(`ZIP carregado: ${folders.length} pastas encontradas!`);
+      }
+    } catch (err: any) {
+      console.error("Erro ao ler ZIP:", err);
+      toast.error("Erro ao abrir o arquivo ZIP.");
+      setZipFile(null);
+    }
+    setZipExtracting(false);
+  };
+
+  const handleProcessZip = async () => {
+    if (!zipFile || zipFolders.length === 0) return;
+    if (lawyerType === "especifico" && !selectedLawyerId) {
+      toast.error("Selecione o advogado primeiro.");
+      return;
+    }
+
+    setProcessingZip(true);
+    setZipProgress(0);
+
+    const initialStatus: typeof zipStatus = {};
+    zipFolders.forEach(f => {
+      initialStatus[f] = { status: 'pending' };
+    });
+    setZipStatus(initialStatus);
+
+    const zip = await JSZip.loadAsync(zipFile);
+    let completedCount = 0;
+
+    for (const folderName of zipFolders) {
+      setZipStatus(prev => ({
+        ...prev,
+        [folderName]: { status: 'processing' }
+      }));
+
+      try {
+        // 1. Find PDF and TXT files in this folder
+        let pdfEntry: JSZip.JSZipObject | null = null;
+        let txtEntry: JSZip.JSZipObject | null = null;
+
+        zip.forEach((relativePath, entry) => {
+          const parts = relativePath.split("/");
+          if (parts[0] === folderName && parts.length === 2 && !entry.dir) {
+            const fileName = parts[1].toLowerCase();
+            if (fileName.endsWith(".pdf") && !pdfEntry) {
+              pdfEntry = entry;
+            } else if (fileName.endsWith(".txt") && !txtEntry) {
+              txtEntry = entry;
+            }
+          }
+        });
+
+        if (!pdfEntry) {
+          throw new Error("Nenhum PDF (ofício) encontrado na pasta.");
+        }
+
+        // 2. Extract text from TXT
+        let txtContent = "";
+        if (txtEntry) {
+          const txtBlob = await (txtEntry as JSZip.JSZipObject).async("blob");
+          txtContent = await txtBlob.text();
+        }
+
+        // 3. Extract text from PDF (ofício)
+        const pdfBlob = await (pdfEntry as JSZip.JSZipObject).async("blob");
+        const pdfFileName = (pdfEntry as JSZip.JSZipObject).name.split("/").pop() || "oficio.pdf";
+        const pdfFile = new File([pdfBlob], pdfFileName, { type: "application/pdf" });
+        const oficioText = await extractTextFromPdf(pdfFile);
+
+        // 4. Analyze with AI (using the ofício-specific function)
+        const result = await aiAnalyzeOficio({
+          oficioText,
+          txtContent,
+          folderName,
+        });
+
+        if (!result.success) throw new Error(result.error || "Erro na análise da IA");
+        const ext = result.extracted as any;
+
+        // 5. Format & extract process number
+        const pNum = formatProcessNumber(ext.process_number || extractProcessNumberFromFilename(pdfFileName) || "");
+
+        // Extract client name from folder if AI didn't find it
+        let clientNameFinal = ext.client_name || "";
+        if (!clientNameFinal || clientNameFinal === "Desconhecido") {
+          // Try to extract name from folder: "001 - João da Silva" or "001 João da Silva"
+          const folderMatch = folderName.match(/^\d+\s*[-–]?\s*(.+)$/);
+          if (folderMatch) {
+            clientNameFinal = folderMatch[1].trim();
+          } else {
+            clientNameFinal = folderName;
+          }
+        }
+
+        // 6. Save automatically
+        await performSave({
+          clientName: clientNameFinal,
+          clientCpf: ext.client_cpf || "",
+          phoneSource: "",
+          phoneContractSource: (ext.all_phones || ext.phone_contract || ext.phone_found || ext.phone || "").replace(/[^\d,\s]/g, ""),
+          caseTitle: ext.case_type ? `${ext.case_type} — ${clientNameFinal}` : `Ofício — ${clientNameFinal}`,
+          defendant: ext.defendant || "",
+          caseType: ext.case_type || "",
+          court: ext.court || "",
+          processNumber: pNum,
+          partnerFirm: ext.partner_law_firm || "",
+          partnerLawyer: ext.lawyers?.map((l: any) => `${l.name} (${l.oab})`).join(", ") || "",
+          caseValue: ext.case_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
+          principalValue: ext.principal_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
+          lawyerFeePercent: ext.lawyer_fee_percent?.toString() || "",
+          lawyerFeeValue: ext.lawyer_fee_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
+          clientNetValue: ext.client_net_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
+          lawyerType,
+          selectedLawyerId,
+          pdfFile: pdfFile,
+          extractedJson: { ...ext, source: "zip_import", folder_name: folderName, txt_content: txtContent }
+        });
+
+        setZipStatus(prev => ({
+          ...prev,
+          [folderName]: { status: 'success' }
+        }));
+      } catch (err: any) {
+        console.error(`Erro ao processar pasta ${folderName}:`, err);
+        setZipStatus(prev => ({
+          ...prev,
+          [folderName]: { status: 'error', error: err.message || "Erro desconhecido" }
+        }));
+      }
+
+      completedCount++;
+      setZipProgress(Math.round((completedCount / zipFolders.length) * 100));
+    }
+
+    setProcessingZip(false);
+    const successCount = Object.values(zipStatus).filter(s => s.status === 'success').length + 1;
+    toast.success(`Importação ZIP finalizada! ${successCount} de ${zipFolders.length} pastas processadas.`);
+  };
+
   return (
     <Layout>
       <div className="p-4 md:p-8 max-w-2xl mx-auto">
@@ -535,14 +708,17 @@ export default function NewCase() {
         </p>
 
         {/* Upload Mode Tabs */}
-        {!extracted && !processingBulk && bulkProgress === 0 && (
+        {!extracted && !processingBulk && bulkProgress === 0 && !processingZip && zipProgress === 0 && (
           <Tabs defaultValue="individual" className="w-full mb-6" onValueChange={(v) => setUploadMode(v as any)}>
-            <TabsList className="grid w-full grid-cols-2 bg-secondary/50">
+            <TabsList className="grid w-full grid-cols-3 bg-secondary/50">
               <TabsTrigger value="individual" className="gap-2">
                 <FileText className="w-4 h-4" /> Individual
               </TabsTrigger>
               <TabsTrigger value="bulk" className="gap-2">
                 <Files className="w-4 h-4" /> Em Massa
+              </TabsTrigger>
+              <TabsTrigger value="zip" className="gap-2">
+                <Archive className="w-4 h-4" /> Importar ZIP
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -792,6 +968,200 @@ export default function NewCase() {
               <Button onClick={() => { setBulkFiles([]); setBulkProgress(0); setBulkStatus({}); setUploadMode("individual"); navigate("/"); }} className="w-full">
                 Finalizar e Voltar para Início
               </Button>
+            )}
+          </div>
+        )}
+
+        {/* ==================== ZIP IMPORT TAB ==================== */}
+        {!extracted && uploadMode === "zip" && !processingZip && zipProgress === 0 && (
+          <div className="bg-card border border-border rounded-xl p-6 shadow-card animate-fade-in space-y-5">
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <Archive className="w-3 h-3" /> Importar Leads via ZIP
+              </Label>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                Envie um arquivo <strong>.zip</strong> contendo pastas numeradas. Cada pasta deve ter um <strong>PDF</strong> (ofício) e um <strong>TXT</strong> com dados do caso. O sistema cria os leads automaticamente.
+              </p>
+              <label
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file && (file.name.endsWith(".zip") || file.type === "application/zip" || file.type === "application/x-zip-compressed")) {
+                    handleZipSelected(file);
+                  } else {
+                    toast.error("Por favor, envie um arquivo .zip");
+                  }
+                }}
+                className={`flex flex-col items-center justify-center w-full min-h-[160px] border-2 border-dashed rounded-xl cursor-pointer transition-all duration-200 bg-secondary/50 ${isDragging ? "border-primary bg-primary/5 shadow-glow" : "border-border hover:border-primary/50"}`}
+              >
+                {zipExtracting ? (
+                  <div className="flex flex-col items-center gap-2 p-4 animate-fade-in">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                    <p className="text-xs text-muted-foreground">Lendo arquivo ZIP...</p>
+                  </div>
+                ) : zipFile ? (
+                  <div className="flex flex-col items-center gap-2 p-4 text-center animate-fade-in relative group">
+                    <Archive className="w-8 h-8 text-primary" />
+                    <span className="text-xs font-medium text-foreground">{zipFile.name}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {zipFolders.length} {zipFolders.length === 1 ? "pasta" : "pastas"} encontrada{zipFolders.length === 1 ? "" : "s"}
+                    </span>
+                    <button
+                      onClick={(e) => { e.preventDefault(); setZipFile(null); setZipFolders([]); }}
+                      className="absolute -top-1 -right-1 bg-destructive text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 p-4 text-center animate-fade-in">
+                    <Upload className={`w-8 h-8 ${isDragging ? "text-primary" : "text-muted-foreground"}`} />
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-foreground">Arraste o arquivo ZIP ou clique para selecionar</p>
+                      <p className="text-[10px] text-muted-foreground">Estrutura esperada: ZIP → Pastas → PDF + TXT</p>
+                    </div>
+                  </div>
+                )}
+                <input type="file" accept=".zip" className="hidden" onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleZipSelected(file);
+                }} />
+              </label>
+            </div>
+
+            {/* Preview of folders found */}
+            {zipFolders.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                    <FolderOpen className="w-3.5 h-3.5 text-primary" />
+                    {zipFolders.length} {zipFolders.length === 1 ? "pasta" : "pastas"} para importar
+                  </span>
+                </div>
+                <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                  {zipFolders.map((folder, idx) => (
+                    <div key={idx} className="flex items-center gap-2 p-2.5 bg-secondary/30 rounded-lg border border-border">
+                      <FolderOpen className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <span className="text-[11px] truncate font-medium">{folder}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Lawyer Selector */}
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Definir Advogado para todos os leads</Label>
+              <Select value={lawyerType} onValueChange={(v) => { setLawyerType(v as any); setSelectedLawyerId(""); }}>
+                <SelectTrigger className="bg-secondary border-border text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="geral">Geral — Paulo Tanaka (Parceiro)</SelectItem>
+                  <SelectItem value="especifico">Específico — Advogado do Caso</SelectItem>
+                </SelectContent>
+              </Select>
+              {lawyerType === "especifico" && (
+                <div className="pt-1">
+                  <Select value={selectedLawyerId} onValueChange={setSelectedLawyerId}>
+                    <SelectTrigger className="bg-secondary border-border text-xs">
+                      <SelectValue placeholder="Escolha o advogado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableLawyers.map((l) => (
+                        <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+
+            <Button
+              onClick={handleProcessZip}
+              disabled={zipFolders.length === 0 || processingZip || zipExtracting}
+              className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:opacity-90 font-semibold h-12 shadow-lg"
+            >
+              <Archive className="w-4 h-4 mr-2" /> Importar {zipFolders.length} Lead{zipFolders.length !== 1 ? "s" : ""}
+            </Button>
+          </div>
+        )}
+
+        {/* ZIP Progress UI */}
+        {(processingZip || zipProgress > 0) && uploadMode === "zip" && !extracted && (
+          <div className="bg-card border border-border rounded-xl p-6 shadow-card animate-fade-in space-y-6">
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm font-medium">
+                <span className="flex items-center gap-2">
+                  <Archive className="w-4 h-4 text-primary" />
+                  Importando leads do ZIP...
+                </span>
+                <span>{zipProgress}%</span>
+              </div>
+              <Progress value={zipProgress} className="h-2" />
+              <p className="text-[10px] text-muted-foreground">
+                {processingZip
+                  ? "Cada pasta está sendo analisada pela IA e importada automaticamente..."
+                  : `Concluído! ${Object.values(zipStatus).filter(s => s.status === 'success').length} de ${zipFolders.length} importados.`
+                }
+              </p>
+            </div>
+
+            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1 custom-scrollbar">
+              {zipFolders.map((folder, idx) => {
+                const state = zipStatus[folder] || { status: 'pending' };
+                return (
+                  <div key={idx} className={`flex items-center justify-between p-3 rounded-lg border transition-all duration-300 ${state.status === 'success' ? 'border-green-500/30 bg-green-500/5' :
+                    state.status === 'error' ? 'border-red-500/30 bg-red-500/5' :
+                      state.status === 'processing' ? 'border-primary/30 bg-primary/5' :
+                        'border-border bg-secondary/20'
+                    }`}>
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <FolderOpen className={`w-4 h-4 ${state.status === 'success' ? 'text-green-500' :
+                        state.status === 'error' ? 'text-red-500' :
+                          state.status === 'processing' ? 'text-primary' :
+                            'text-muted-foreground'
+                        }`} />
+                      <div className="flex flex-col overflow-hidden">
+                        <span className="text-xs font-medium truncate">{folder}</span>
+                        {state.error && <span className="text-[10px] text-red-400 truncate">{state.error}</span>}
+                      </div>
+                    </div>
+                    <div>
+                      {state.status === 'pending' && <div className="w-4 h-4 border-2 border-muted border-t-transparent rounded-full" />}
+                      {state.status === 'processing' && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+                      {state.status === 'success' && <CheckCircle className="w-4 h-4 text-green-500" />}
+                      {state.status === 'error' && <AlertCircle className="w-4 h-4 text-red-500" />}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {!processingZip && (
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setZipFile(null); setZipFolders([]); setZipProgress(0); setZipStatus({});
+                  }}
+                  className="flex-1"
+                >
+                  Novo Import
+                </Button>
+                <Button
+                  onClick={() => {
+                    setZipFile(null); setZipFolders([]); setZipProgress(0); setZipStatus({});
+                    setUploadMode("individual"); navigate("/");
+                  }}
+                  className="flex-1 bg-gradient-to-r from-violet-600 to-indigo-600 text-white"
+                >
+                  Finalizar e Voltar
+                </Button>
+              </div>
             )}
           </div>
         )}

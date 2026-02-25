@@ -227,6 +227,314 @@ Responda APENAS com JSON:
     }
 }
 
+// ==================== AI ANALYZE OFÍCIO (ZIP import) ====================
+
+// Local parser for structured TXT files — no AI needed for the TXT!
+export function parseTxtProcesso(txt: string): {
+    process_number: string;
+    client_name: string;
+    client_cpf: string;
+    client_birth_date: string;
+    client_age: string;
+    client_income: string;
+    client_phones: string[];
+    client_mother: string;
+    client_score: string;
+    additional_parties: { name: string; cpf: string; birth_date: string; age: string; income: string; phones: string[]; mother: string; score: string }[];
+    defendant: string;
+    defendant_cnpj: string;
+    additional_defendants: { name: string; cnpj: string }[];
+    tribunal: string;
+    grau: string;
+    classe: string;
+    orgao_julgador: string;
+    ultimo_movimento: string;
+    oab_consultante: string;
+} {
+    const result = {
+        process_number: "",
+        client_name: "",
+        client_cpf: "",
+        client_birth_date: "",
+        client_age: "",
+        client_income: "",
+        client_phones: [] as string[],
+        client_mother: "",
+        client_score: "",
+        additional_parties: [] as any[],
+        defendant: "",
+        defendant_cnpj: "",
+        additional_defendants: [] as { name: string; cnpj: string }[],
+        tribunal: "",
+        grau: "",
+        classe: "",
+        orgao_julgador: "",
+        ultimo_movimento: "",
+        oab_consultante: "",
+    };
+
+    // Process number
+    const procMatch = txt.match(/PROCESSO:\s*(.+)/);
+    if (procMatch) result.process_number = procMatch[1].trim();
+
+    // Split into sections
+    const ativoSection = txt.match(/REQUERENTE \(POLO ATIVO\):\s*[-]+\s*([\s\S]*?)(?=REQUERIDO \(POLO PASSIVO\):|$)/i);
+    const passivoSection = txt.match(/REQUERIDO \(POLO PASSIVO\):\s*[-]+\s*([\s\S]*?)(?=DADOS DA A|$)/i);
+    const dadosSection = txt.match(/DADOS DA A[CÇ][AÃ]O:\s*[-]+\s*([\s\S]*?)(?====|$)/i);
+
+    // Parse POLO ATIVO (may have multiple parties)
+    if (ativoSection) {
+        const ativoText = ativoSection[1];
+        // Split by "Nome:" to get individual parties
+        const partyBlocks = ativoText.split(/(?=Nome:)/);
+        let isFirst = true;
+
+        for (const block of partyBlocks) {
+            if (!block.trim()) continue;
+
+            const nameMatch = block.match(/Nome:\s*(.+)/);
+            const cpfMatch = block.match(/CPF:\s*(\d+)/);
+            const birthMatch = block.match(/Data Nascimento:\s*([^\(]+)/);
+            const ageMatch = block.match(/Idade:\s*(\d+)/);
+            const incomeMatch = block.match(/Renda Presumida:\s*(.+)/);
+            const phonesMatch = block.match(/Telefones?:\s*(.+)/);
+            const motherMatch = block.match(/Nome da M[aã]e:\s*(.+)/);
+            const scoreMatch = block.match(/Score:\s*(\d+)/);
+
+            const party = {
+                name: nameMatch?.[1]?.trim() || "",
+                cpf: cpfMatch?.[1]?.trim() || "",
+                birth_date: birthMatch?.[1]?.trim() || "",
+                age: ageMatch?.[1]?.trim() || "",
+                income: incomeMatch?.[1]?.trim() || "",
+                phones: phonesMatch?.[1]?.split(",").map(p => p.trim()).filter(Boolean) || [],
+                mother: motherMatch?.[1]?.trim() || "",
+                score: scoreMatch?.[1]?.trim() || "",
+            };
+
+            if (isFirst) {
+                result.client_name = party.name;
+                result.client_cpf = party.cpf;
+                result.client_birth_date = party.birth_date;
+                result.client_age = party.age;
+                result.client_income = party.income;
+                result.client_phones = party.phones;
+                result.client_mother = party.mother;
+                result.client_score = party.score;
+                isFirst = false;
+            } else {
+                result.additional_parties.push(party);
+            }
+        }
+    }
+
+    // Parse POLO PASSIVO (may have multiple defendants)
+    if (passivoSection) {
+        const passivoText = passivoSection[1];
+        const defBlocks = passivoText.split(/(?=Nome:)/);
+        let isFirst = true;
+
+        for (const block of defBlocks) {
+            if (!block.trim()) continue;
+            const nameMatch = block.match(/Nome:\s*(.+)/);
+            const cnpjMatch = block.match(/CNPJ:\s*(\d+)/);
+
+            if (isFirst) {
+                result.defendant = nameMatch?.[1]?.trim() || "";
+                result.defendant_cnpj = cnpjMatch?.[1]?.trim() || "";
+                isFirst = false;
+            } else {
+                result.additional_defendants.push({
+                    name: nameMatch?.[1]?.trim() || "",
+                    cnpj: cnpjMatch?.[1]?.trim() || "",
+                });
+            }
+        }
+    }
+
+    // Parse DADOS DA AÇÃO
+    if (dadosSection) {
+        const dadosText = dadosSection[1];
+        const tribunalMatch = dadosText.match(/Tribunal:\s*(.+)/);
+        const grauMatch = dadosText.match(/Grau:\s*(.+)/);
+        const classeMatch = dadosText.match(/Classe:\s*(.+)/);
+        const orgaoMatch = dadosText.match(/[OÓ]rg[aã]o Julgador:\s*(.+)/);
+        const movMatch = dadosText.match(/[UÚ]ltimo Movimento:\s*(.+)/);
+        const oabMatch = dadosText.match(/OAB Consultante:\s*(.+)/);
+
+        result.tribunal = tribunalMatch?.[1]?.trim() || "";
+        result.grau = grauMatch?.[1]?.trim() || "";
+        result.classe = classeMatch?.[1]?.trim() || "";
+        result.orgao_julgador = orgaoMatch?.[1]?.trim() || "";
+        result.ultimo_movimento = movMatch?.[1]?.trim() || "";
+        result.oab_consultante = oabMatch?.[1]?.trim() || "";
+    }
+
+    return result;
+}
+
+export async function aiAnalyzeOficio(params: {
+    oficioText: string;
+    txtContent: string;
+    folderName: string;
+}): Promise<{ success: boolean; extracted: any; error?: string }> {
+    const { oficioText, txtContent, folderName } = params;
+
+    // Step 1: Parse the TXT locally (fast & reliable)
+    const txtData = parseTxtProcesso(txtContent);
+
+    // Step 2: Use AI ONLY for the ofício PDF to get financial data & case type details
+    const systemPrompt = `Você é um especialista em análise de ofícios judiciais.
+Sua tarefa é extrair APENAS as informações que estão NO OFÍCIO que NÃO estão disponíveis no TXT já parseado.
+
+INFORMAÇÕES JÁ EXTRAÍDAS DO TXT (NÃO REPITA, apenas complemente):
+- Nome do Cliente: ${txtData.client_name || "não encontrado"}
+- CPF: ${txtData.client_cpf || "não encontrado"}
+- Réu: ${txtData.defendant || "não encontrado"}
+- Processo: ${txtData.process_number || "não encontrado"}
+- Classe: ${txtData.classe || "não encontrada"}
+- Tribunal: ${txtData.tribunal || "não encontrado"}
+- Órgão Julgador: ${txtData.orgao_julgador || "não encontrado"}
+
+O QUE PRECISO QUE VOCÊ EXTRAIA DO OFÍCIO:
+1. VALOR DA CAUSA / RPV / Precatório / Valor a depositar (o que encontrar)
+2. Tipo de ação mais detalhado (baseado no conteúdo do ofício)
+3. Advogados mencionados no ofício (nome e OAB)
+4. Qualquer valor financeiro mencionado
+5. Escritório de advocacia se mencionado
+6. Resumo em 2-3 frases sobre o que é o caso
+
+Responda APENAS com JSON:
+{
+  "case_value": 0.00,
+  "principal_value": 0.00,
+  "lawyer_fee_percent": 0.00,
+  "lawyer_fee_value": 0.00,
+  "client_net_value": 0.00,
+  "case_type_detail": "TIPO DETALHADO DA AÇÃO",
+  "lawyers": [{"name": "...", "oab": "...", "role": "..."}],
+  "partner_law_firm": "ESCRITÓRIO",
+  "summary": "RESUMO_DO_CASO"
+}`;
+
+    const MAX_TOTAL = 10000;
+    let pdfText = oficioText || "";
+    if (pdfText.length > MAX_TOTAL) {
+        const HEAD = Math.floor(MAX_TOTAL * 0.5);
+        const TAIL = Math.floor(MAX_TOTAL * 0.5);
+        pdfText = pdfText.slice(0, HEAD) + "\n\n[... OMITIDO ...]\n\n" + pdfText.slice(-TAIL);
+    }
+
+    const userParts: GeminiPart[] = [
+        { text: `TEXTO DO OFÍCIO JUDICIAL:\n${pdfText || "Não fornecido"}` },
+    ];
+
+    try {
+        const raw = await callGemini(systemPrompt, userParts);
+        const aiData = extractJson(raw);
+
+        // Step 3: Merge TXT data (reliable) with AI data (supplementary)
+        // Pick best phone: prefer mobile (11 digits starting with 9)
+        const allPhones = txtData.client_phones;
+        let bestPhone = "";
+        if (allPhones.length > 0) {
+            // Prefer mobile numbers (11 digits, area code + 9xxxx)
+            const mobile = allPhones.find(p => {
+                const digits = p.replace(/\D/g, "");
+                return digits.length === 11 && digits[2] === "9";
+            });
+            bestPhone = mobile || allPhones[0];
+        }
+
+        // Build defendant string with all defendants
+        let fullDefendant = txtData.defendant;
+        if (txtData.additional_defendants.length > 0) {
+            fullDefendant += " / " + txtData.additional_defendants.map(d => d.name).join(" / ");
+        }
+
+        const merged = {
+            client_name: txtData.client_name,
+            client_cpf: txtData.client_cpf,
+            defendant: fullDefendant,
+            case_type: aiData?.case_type_detail || txtData.classe || "",
+            court: txtData.orgao_julgador
+                ? `${txtData.orgao_julgador} — ${txtData.tribunal}`
+                : txtData.tribunal,
+            process_number: txtData.process_number,
+            case_value: aiData?.case_value || 0,
+            principal_value: aiData?.principal_value || 0,
+            lawyer_fee_percent: aiData?.lawyer_fee_percent || 0,
+            lawyer_fee_value: aiData?.lawyer_fee_value || 0,
+            client_net_value: aiData?.client_net_value || 0,
+            lawyers: aiData?.lawyers || [],
+            partner_law_firm: aiData?.partner_law_firm || "",
+            phone_contract: bestPhone,
+            all_phones: allPhones.join(", "),
+            summary: aiData?.summary || `${txtData.classe || "Processo"} — ${txtData.client_name} vs ${txtData.defendant}`,
+            // Extra data from TXT
+            client_birth_date: txtData.client_birth_date,
+            client_age: txtData.client_age,
+            client_income: txtData.client_income,
+            client_mother: txtData.client_mother,
+            client_score: txtData.client_score,
+            additional_parties: txtData.additional_parties,
+            defendant_cnpj: txtData.defendant_cnpj,
+            oab_consultante: txtData.oab_consultante,
+            ultimo_movimento: txtData.ultimo_movimento,
+            classe_processual: txtData.classe,
+        };
+
+        return { success: true, extracted: merged };
+    } catch (err: any) {
+        // If AI fails, still return TXT data (better than nothing)
+        const allPhones = txtData.client_phones;
+        const mobile = allPhones.find(p => {
+            const digits = p.replace(/\D/g, "");
+            return digits.length === 11 && digits[2] === "9";
+        });
+        const bestPhone = mobile || allPhones[0] || "";
+
+        let fullDefendant = txtData.defendant;
+        if (txtData.additional_defendants.length > 0) {
+            fullDefendant += " / " + txtData.additional_defendants.map(d => d.name).join(" / ");
+        }
+
+        const fallback = {
+            client_name: txtData.client_name,
+            client_cpf: txtData.client_cpf,
+            defendant: fullDefendant,
+            case_type: txtData.classe || "",
+            court: txtData.orgao_julgador
+                ? `${txtData.orgao_julgador} — ${txtData.tribunal}`
+                : txtData.tribunal,
+            process_number: txtData.process_number,
+            case_value: 0,
+            principal_value: 0,
+            lawyer_fee_percent: 0,
+            lawyer_fee_value: 0,
+            client_net_value: 0,
+            lawyers: [],
+            partner_law_firm: "",
+            phone_contract: bestPhone,
+            all_phones: allPhones.join(", "),
+            summary: `${txtData.classe || "Processo"} — ${txtData.client_name} vs ${txtData.defendant}. (Análise do ofício falhou: ${err.message})`,
+            client_birth_date: txtData.client_birth_date,
+            client_age: txtData.client_age,
+            client_income: txtData.client_income,
+            client_mother: txtData.client_mother,
+            client_score: txtData.client_score,
+            additional_parties: txtData.additional_parties,
+            defendant_cnpj: txtData.defendant_cnpj,
+            oab_consultante: txtData.oab_consultante,
+            ultimo_movimento: txtData.ultimo_movimento,
+            classe_processual: txtData.classe,
+        };
+
+        console.warn(`AI falhou para ofício, usando apenas dados do TXT:`, err.message);
+        return { success: true, extracted: fallback };
+    }
+}
+
 // ==================== AI MESSAGE (chat + message generation) ====================
 
 const DEFAULT_COMPANY_CONTEXT = `Advogado Paulo Tanaka. Somos uma empresa parceira que acompanha o processo jurídico de alguns casos, e notificamos o cliente quando ele tem algo para receber, no caso, quando as causas são favoráveis.
