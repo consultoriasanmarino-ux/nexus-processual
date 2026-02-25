@@ -76,6 +76,7 @@ export default function NewCase() {
   const [zipProgress, setZipProgress] = useState(0);
   const [zipStatus, setZipStatus] = useState<Record<string, { status: 'pending' | 'processing' | 'success' | 'error', error?: string }>>({});
   const [zipExtracting, setZipExtracting] = useState(false);
+  const [folderFiles, setFolderFiles] = useState<File[]>([]);
 
   // Editable fields after extraction
   const [clientName, setClientName] = useState("");
@@ -606,8 +607,37 @@ export default function NewCase() {
     setZipExtracting(false);
   };
 
+  const handleFolderSelected = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setZipExtracting(true);
+    setZipFile(null); // Clear zip if folder is selected
+    const filesArray = Array.from(files);
+    setFolderFiles(filesArray);
+
+    const folderSet = new Set<string>();
+    filesArray.forEach(file => {
+      const path = (file as any).webkitRelativePath || file.name;
+      const parts = path.split("/");
+      // If we selected a folder, the path usually starts with 'folderName/subFolder/file'
+      // We want the 'subFolder' if it exists, otherwise the 'folderName'
+      if (parts.length >= 2) {
+        folderSet.add(parts[parts.length - 2]);
+      }
+    });
+
+    const folders = Array.from(folderSet).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
+    setZipFolders(folders);
+
+    if (folders.length === 0) {
+      toast.error("Nenhuma pasta identificada. Verifique a estrutura.");
+    } else {
+      toast.success(`${folders.length} pastas identificadas na seleção!`);
+    }
+    setZipExtracting(false);
+  };
+
   const handleProcessZip = async () => {
-    if (!zipFile || zipFolders.length === 0) return;
+    if ((!zipFile && folderFiles.length === 0) || zipFolders.length === 0) return;
     if (lawyerType === "especifico" && !selectedLawyerId) {
       toast.error("Selecione o advogado primeiro.");
       return;
@@ -616,29 +646,36 @@ export default function NewCase() {
     setProcessingZip(true);
     setZipProgress(0);
 
-    const initialStatus: typeof zipStatus = {};
-    const zip = await JSZip.loadAsync(zipFile);
+    // 1. Index files for O(1) folder access
+    console.log("Indexing source contents...");
+    const folderIndex: Record<string, { pdf?: any, txt?: any }> = {};
 
-    // 1. Pre-index the ZIP for O(1) folder access
-    console.log("Indexing ZIP contents...");
-    const folderIndex: Record<string, { pdf?: JSZip.JSZipObject, txt?: JSZip.JSZipObject }> = {};
-
-    zip.forEach((relativePath, entry) => {
-      if (entry.dir) return;
-      const parts = relativePath.split("/");
-      if (parts.length === 2) {
-        const folder = parts[0];
-        const fileName = parts[1].toLowerCase();
-
-        if (!folderIndex[folder]) folderIndex[folder] = {};
-
-        if (fileName.endsWith(".pdf") && !folderIndex[folder].pdf) {
-          folderIndex[folder].pdf = entry;
-        } else if (fileName.endsWith(".txt") && !folderIndex[folder].txt) {
-          folderIndex[folder].txt = entry;
+    if (zipFile) {
+      const zip = await JSZip.loadAsync(zipFile);
+      zip.forEach((relativePath, entry) => {
+        if (entry.dir) return;
+        const parts = relativePath.split("/");
+        if (parts.length >= 2) {
+          const folder = parts[parts.length - 2]; // Get immediate parent
+          const fileName = parts[parts.length - 1].toLowerCase();
+          if (!folderIndex[folder]) folderIndex[folder] = {};
+          if (fileName.endsWith(".pdf") && !folderIndex[folder].pdf) folderIndex[folder].pdf = entry;
+          else if (fileName.endsWith(".txt") && !folderIndex[folder].txt) folderIndex[folder].txt = entry;
         }
-      }
-    });
+      });
+    } else if (folderFiles.length > 0) {
+      folderFiles.forEach(file => {
+        const path = (file as any).webkitRelativePath || file.name;
+        const parts = path.split("/");
+        if (parts.length >= 2) {
+          const folder = parts[parts.length - 2];
+          const fileName = parts[parts.length - 1].toLowerCase();
+          if (!folderIndex[folder]) folderIndex[folder] = {};
+          if (fileName.endsWith(".pdf") && !folderIndex[folder].pdf) folderIndex[folder].pdf = file;
+          else if (fileName.endsWith(".txt") && !folderIndex[folder].txt) folderIndex[folder].txt = file;
+        }
+      });
+    }
 
     let completedCount = 0;
     const CONCURRENCY = 8;
@@ -662,14 +699,23 @@ export default function NewCase() {
         // 2. Extract text from TXT
         let txtContent = "";
         if (txtEntry) {
-          const txtBlob = await txtEntry.async("blob");
-          txtContent = await txtBlob.text();
+          if ('async' in txtEntry) { // JSZipObject
+            const txtBlob = await txtEntry.async("blob");
+            txtContent = await txtBlob.text();
+          } else { // File
+            txtContent = await (txtEntry as File).text();
+          }
         }
 
         // 3. Extract text from PDF (ofício)
-        const pdfBlob = await pdfEntry.async("blob");
-        const pdfFileName = pdfEntry.name.split("/").pop() || "oficio.pdf";
-        const pdfFileInstance = new File([pdfBlob], pdfFileName, { type: "application/pdf" });
+        let pdfFileInstance: File;
+        if ('async' in pdfEntry) { // JSZipObject
+          const pdfBlob = await pdfEntry.async("blob");
+          const pdfFileName = pdfEntry.name.split("/").pop() || "oficio.pdf";
+          pdfFileInstance = new File([pdfBlob], pdfFileName, { type: "application/pdf" });
+        } else { // File
+          pdfFileInstance = pdfEntry as File;
+        }
         const oficioText = await extractTextFromPdf(pdfFileInstance);
 
         // 4. Analyze with AI
@@ -692,7 +738,7 @@ export default function NewCase() {
         // 5. Fallback logic if AI fails
         const clientMatch = folderName.match(/^\d+\s*[-–]?\s*(.+)$/);
         const clientNameFinal = ext.client_name || (clientMatch ? clientMatch[1].trim() : folderName);
-        const pNum = formatProcessNumber(ext.process_number || extractProcessNumberFromFilename(pdfFileName) || "");
+        const pNum = formatProcessNumber(ext.process_number || extractProcessNumberFromFilename(pdfFileInstance.name) || "");
 
         // Generate generic summary if AI failed
         if (!aiSuccess || !ext.summary) {
@@ -724,7 +770,7 @@ export default function NewCase() {
         // 7. Save automatically
         await performSave({
           clientName: clientNameFinal,
-          clientCpf: ext.client_cpf || "",
+          clientCpf: (ext.client_cpf as string) || "",
           phoneSource: finalPhoneSource,
           phoneContractSource: uniqueWhatsApp.join(" "), // ONLY valid mobiles
           caseTitle: ext.case_type ? `${ext.case_type} — ${clientNameFinal}` : `Ofício — ${clientNameFinal}`,
@@ -1101,20 +1147,65 @@ export default function NewCase() {
                       <X className="w-3 h-3" />
                     </button>
                   </div>
+                ) : folderFiles.length > 0 ? (
+                  <div className="flex flex-col items-center gap-2 p-4 text-center animate-fade-in relative group">
+                    <FolderOpen className="w-8 h-8 text-primary" />
+                    <span className="text-[10px] font-medium text-foreground">Pasta Selecionada</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {zipFolders.length} {zipFolders.length === 1 ? "pasta" : "pastas"} identificada{zipFolders.length === 1 ? "" : "s"}
+                    </span>
+                    <button
+                      onClick={(e) => { e.preventDefault(); setFolderFiles([]); setZipFolders([]); }}
+                      className="absolute -top-1 -right-1 bg-destructive text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center gap-2 p-4 text-center animate-fade-in">
-                    <Upload className={`w-8 h-8 ${isDragging ? "text-primary" : "text-muted-foreground"}`} />
+                    <div className="flex gap-4 mb-2">
+                      <Archive className={`w-8 h-8 text-muted-foreground`} />
+                      <FolderOpen className={`w-8 h-8 text-muted-foreground`} />
+                    </div>
                     <div className="space-y-1">
-                      <p className="text-xs font-medium text-foreground">Arraste o arquivo ZIP ou clique para selecionar</p>
-                      <p className="text-[10px] text-muted-foreground">Estrutura esperada: ZIP → Pastas → PDF + TXT</p>
+                      <p className="text-xs font-medium text-foreground">Arraste um ZIP ou arraste uma PASTA aqui</p>
+                      <p className="text-[10px] text-muted-foreground whitespace-nowrap">Estrutura: Pasta Principal → Subpastas (Cliente) → PDF + TXT</p>
                     </div>
                   </div>
                 )}
-                <input type="file" accept=".zip" className="hidden" onChange={(e) => {
+                <input type="file" accept=".zip" className="hidden" id="zip-input" onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) handleZipSelected(file);
                 }} />
+                <input
+                  type="file"
+                  {...({ webkitdirectory: "", directory: "" } as any)}
+                  className="hidden"
+                  id="folder-input"
+                  onChange={(e) => handleFolderSelected(e.target.files)}
+                />
               </label>
+
+              {!zipFile && folderFiles.length === 0 && (
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 text-[10px] h-8"
+                    onClick={() => document.getElementById('zip-input')?.click()}
+                  >
+                    <Archive className="w-3 h-3 mr-1.5" /> Selecionar ZIP
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 text-[10px] h-8"
+                    onClick={() => document.getElementById('folder-input')?.click()}
+                  >
+                    <FolderOpen className="w-3 h-3 mr-1.5" /> Selecionar Pasta
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Preview of folders found */}
@@ -1170,7 +1261,7 @@ export default function NewCase() {
               disabled={zipFolders.length === 0 || processingZip || zipExtracting}
               className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:opacity-90 font-semibold h-12 shadow-lg"
             >
-              <Archive className="w-4 h-4 mr-2" /> Importar {zipFolders.length} Lead{zipFolders.length !== 1 ? "s" : ""}
+              <CheckCircle className="w-4 h-4 mr-2" /> Iniciar Importação de {zipFolders.length} Lead{zipFolders.length !== 1 ? "s" : ""}
             </Button>
           </div>
         )}
@@ -1181,8 +1272,8 @@ export default function NewCase() {
             <div className="space-y-2">
               <div className="flex justify-between text-sm font-medium">
                 <span className="flex items-center gap-2">
-                  <Archive className="w-4 h-4 text-primary" />
-                  Importando leads do ZIP...
+                  {zipFile ? <Archive className="w-4 h-4 text-primary" /> : <FolderOpen className="w-4 h-4 text-primary" />}
+                  Importando leads...
                 </span>
                 <span>{zipProgress}%</span>
               </div>
@@ -1231,7 +1322,7 @@ export default function NewCase() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setZipFile(null); setZipFolders([]); setZipProgress(0); setZipStatus({});
+                    setZipFile(null); setFolderFiles([]); setZipFolders([]); setZipProgress(0); setZipStatus({});
                   }}
                   className="flex-1"
                 >
@@ -1239,7 +1330,7 @@ export default function NewCase() {
                 </Button>
                 <Button
                   onClick={() => {
-                    setZipFile(null); setZipFolders([]); setZipProgress(0); setZipStatus({});
+                    setZipFile(null); setFolderFiles([]); setZipFolders([]); setZipProgress(0); setZipStatus({});
                     setUploadMode("individual"); navigate("/");
                   }}
                   className="flex-1 bg-gradient-to-r from-violet-600 to-indigo-600 text-white"
