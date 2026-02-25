@@ -333,18 +333,47 @@ export async function exportAsOficio(caseData: Case) {
   const centerX = pageWidth / 2;
   const margin = 20;
 
-  // Fetch detailed data from document if available
+  // Fetch detailed data and CHECK for existing original ofício
   let financialData: any = null;
   try {
     const { data: docData } = await supabase
       .from("documents")
-      .select("extracted_json")
+      .select("file_url, extracted_json, doc_type")
       .eq("case_id", caseData.id)
-      .eq("doc_type", "petição inicial")
-      .maybeSingle();
-    financialData = docData?.extracted_json;
+      .in("doc_type", ["ofício", "petição inicial"])
+      .order("created_at", { ascending: false });
+
+    // 1. Prioritize official ofício download if exists
+    const officialOficio = docData?.find(d => d.doc_type === "ofício");
+    if (officialOficio?.file_url) {
+      console.log("Found official ofício, downloading original file...");
+      const { data: signedData } = await supabase.storage
+        .from("documents")
+        .createSignedUrl(officialOficio.file_url, 60);
+
+      if (signedData?.signedUrl) {
+        const response = await fetch(signedData.signedUrl);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const fileName = (caseData as any).clients?.full_name
+          ? `OFICIO-${(caseData as any).clients.full_name.toUpperCase()}.pdf`
+          : "oficio-oficial.pdf";
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        toast.success("Ofício oficial baixado com sucesso!");
+        return; // Stop here, don't generate the PDF
+      }
+    }
+
+    // Fallback for financial data if just generating the PDF
+    financialData = docData?.find(d => d.doc_type === "petição inicial")?.extracted_json;
   } catch (e) {
-    console.warn("Could not fetch financial details for ofício", e);
+    console.warn("Could not fetch details for ofício download/generation", e);
   }
 
   // Dados dinâmicos

@@ -378,34 +378,72 @@ export default function NewCase() {
       clientData = newClient;
     }
 
-    // 2. Create case
+    // 2. Find or Create case
+    let caseResult: any = null;
     const parsedValue = data.caseValue ? parseFloat(data.caseValue.replace(/\./g, "").replace(",", ".")) : null;
-    const { data: caseResult, error: caseErr } = await supabase
-      .from("cases")
-      .insert({
-        client_id: clientData.id,
-        user_id: user.id,
-        case_title: data.caseTitle || `Caso — ${data.clientName}`,
-        defendant: data.defendant || null,
-        case_type: data.caseType || null,
-        court: data.court || null,
-        process_number: data.processNumber || null,
-        partner_law_firm_name: data.partnerFirm || null,
-        partner_lawyer_name: data.partnerLawyer || null,
-        case_value: parsedValue,
-        case_summary: data.extractedJson?.summary || null,
-        lawyer_type: data.lawyerType,
-        lawyer_id: data.lawyerType === "especifico" && data.selectedLawyerId ? data.selectedLawyerId : null,
-        company_context: getCompanyContext(
-          data.lawyerType,
-          data.lawyerType === "especifico"
-            ? availableLawyers.find((l) => l.id === data.selectedLawyerId)?.name
-            : undefined
-        ),
-      } as any)
-      .select()
-      .single();
-    if (caseErr) throw caseErr;
+
+    // Check if case already exists by process number
+    if (data.processNumber) {
+      const { data: existingCase } = await supabase
+        .from("cases")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("process_number", data.processNumber)
+        .maybeSingle();
+
+      if (existingCase) {
+        console.log("Existing case found, updating values:", data.processNumber);
+        const { data: updatedCase, error: updateErr } = await supabase
+          .from("cases")
+          .update({
+            defendant: data.defendant || existingCase.defendant,
+            case_type: data.caseType || existingCase.case_type,
+            court: data.court || existingCase.court,
+            case_value: parsedValue || existingCase.case_value,
+            case_summary: data.extractedJson?.summary || existingCase.case_summary,
+            partner_law_firm_name: data.partnerFirm || existingCase.partner_law_firm_name,
+            partner_lawyer_name: data.partnerLawyer || existingCase.partner_lawyer_name,
+            lawyer_type: data.lawyerType || existingCase.lawyer_type,
+            lawyer_id: data.lawyerType === "especifico" && data.selectedLawyerId ? data.selectedLawyerId : existingCase.lawyer_id,
+          } as any)
+          .eq("id", existingCase.id)
+          .select()
+          .single();
+
+        if (!updateErr) caseResult = updatedCase;
+        else throw updateErr;
+      }
+    }
+
+    if (!caseResult) {
+      const { data: newCase, error: caseErr } = await supabase
+        .from("cases")
+        .insert({
+          client_id: clientData.id,
+          user_id: user.id,
+          case_title: data.caseTitle || `Caso — ${data.clientName}`,
+          defendant: data.defendant || null,
+          case_type: data.caseType || null,
+          court: data.court || null,
+          process_number: data.processNumber || null,
+          partner_law_firm_name: data.partnerFirm || null,
+          partner_lawyer_name: data.partnerLawyer || null,
+          case_value: parsedValue,
+          case_summary: data.extractedJson?.summary || null,
+          lawyer_type: data.lawyerType,
+          lawyer_id: data.lawyerType === "especifico" && data.selectedLawyerId ? data.selectedLawyerId : null,
+          company_context: getCompanyContext(
+            data.lawyerType,
+            data.lawyerType === "especifico"
+              ? availableLawyers.find((l) => l.id === data.selectedLawyerId)?.name
+              : undefined
+          ),
+        } as any)
+        .select()
+        .single();
+      if (caseErr) throw caseErr;
+      caseResult = newCase;
+    }
 
     // 3. Upload files and save documents
     if (data.pdfFile) {
