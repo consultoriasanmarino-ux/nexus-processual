@@ -61,6 +61,11 @@ function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () =
   const phones = client.phone?.split(/[\s,;|]+/).filter(Boolean) || [];
   const contractPhones = client.phone_contract?.split(/[\s,;|]+/).filter(Boolean) || [];
 
+  const isWA = (p: string) => {
+    const clean = p.replace(/\D/g, "");
+    return clean.length === 11 && clean[2] === "9";
+  };
+
   const openWhatsApp = (p: string) => {
     const clean = p.replace(/\D/g, "");
     if (clean.length >= 10) {
@@ -85,20 +90,26 @@ function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () =
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {phones.length > 0 ? phones.map((p, idx) => (
-              <div key={idx} className="flex items-center gap-2 bg-secondary/30 border border-border/50 rounded-lg px-2.5 py-1.5 group transition-colors hover:border-primary/30">
-                <Phone className="w-3 h-3 text-muted-foreground" />
-                <span className="text-xs font-semibold">{formatPhone(p)}</span>
-                <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => openWhatsApp(p)} title="Abrir no WhatsApp" className="text-[#25D366] hover:scale-110 transition-transform">
-                    <MessageSquare className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => startEditing("phone", client.phone)} className="text-muted-foreground hover:text-foreground">
-                    <Pencil className="w-3 h-3" />
-                  </button>
+            {phones.length > 0 ? phones.map((p, idx) => {
+              const wa = isWA(p);
+              return (
+                <div key={idx} className={cn(
+                  "flex items-center gap-2 border rounded-lg px-2.5 py-1.5 group transition-all",
+                  wa ? "bg-secondary/30 border-border/50 hover:border-primary/30" : "bg-muted/10 border-dashed border-muted-foreground/20 opacity-70"
+                )}>
+                  {wa ? <MessageSquare className="w-3 h-3 text-[#25D366]" /> : <Phone className="w-3 h-3 text-muted-foreground" />}
+                  <span className={cn("text-xs font-semibold", !wa && "text-muted-foreground")}>{formatPhone(p)}</span>
+                  <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => openWhatsApp(p)} title={wa ? "Abrir no WhatsApp" : "Tentar WhatsApp (Fixo)"} className={cn("hover:scale-110 transition-transform", wa ? "text-[#25D366]" : "text-muted-foreground")}>
+                      <MessageSquare className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => startEditing("phone", client.phone)} className="text-muted-foreground hover:text-foreground">
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )) : (
+              );
+            }) : (
               <button
                 onClick={() => startEditing("phone", "")}
                 className="text-[10px] text-muted-foreground italic flex items-center gap-1 hover:text-primary transition-colors"
@@ -123,20 +134,26 @@ function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () =
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {contractPhones.length > 0 ? contractPhones.map((p, idx) => (
-              <div key={idx} className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-2.5 py-1.5 group transition-all hover:bg-primary/10">
-                <Phone className="w-3 h-3 text-primary" />
-                <span className="text-xs font-bold text-foreground">{formatPhone(p)}</span>
-                <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => openWhatsApp(p)} title="Abrir no WhatsApp" className="text-[#25D366] hover:scale-110 transition-transform">
-                    <MessageSquare className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => startEditing("phone_contract", client.phone_contract)} className="text-muted-foreground hover:text-foreground">
-                    <Pencil className="w-3 h-3" />
-                  </button>
+            {contractPhones.length > 0 ? contractPhones.map((p, idx) => {
+              const wa = isWA(p);
+              return (
+                <div key={idx} className={cn(
+                  "flex items-center gap-2 border rounded-lg px-2.5 py-1.5 group transition-all",
+                  wa ? "bg-primary/5 border-primary/20 hover:bg-primary/10" : "bg-muted/5 border-dashed border-muted-foreground/10 opacity-60"
+                )}>
+                  {wa ? <MessageSquare className="w-3 h-3 text-[#25D366]" /> : <Phone className="w-3 h-3 text-muted-foreground" />}
+                  <span className={cn("text-xs font-bold", !wa ? "text-muted-foreground" : "text-foreground")}>{formatPhone(p)}</span>
+                  <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => openWhatsApp(p)} title={wa ? "Abrir no WhatsApp" : "Tentar WhatsApp (Fixo)"} className={cn("hover:scale-110 transition-transform", wa ? "text-[#25D366]" : "text-muted-foreground")}>
+                      <MessageSquare className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => startEditing("phone_contract", client.phone_contract)} className="text-muted-foreground hover:text-foreground">
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )) : (
+              );
+            }) : (
               <div
                 className="bg-destructive/5 border border-destructive/20 rounded-lg px-2.5 py-1.5 flex items-center gap-2 cursor-pointer hover:bg-destructive/10 transition-colors"
                 onClick={() => startEditing("phone_contract", "")}

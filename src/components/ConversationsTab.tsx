@@ -195,24 +195,49 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
             // Deduplicate
             const uniquePhones = Array.from(new Set(allPhones.map(p => p.replace(/\D/g, ""))));
 
+            // Heuristic para Brasil: 11 dígitos começando com 9 = Celular (WhatsApp)
+            const isWhatsApp = (p: string) => p.length === 11 && p[2] === "9";
+            const waNumbers = uniquePhones.filter(isWhatsApp);
+            const fixedNumbers = uniquePhones.filter(p => !isWhatsApp(p));
+
             if (uniquePhones.length === 0) {
               return <span className="text-[10px] text-muted-foreground italic">Nenhum número encontrado para este cliente.</span>;
             }
 
-            return uniquePhones.map((p, idx) => (
-              <Button
-                key={idx}
-                size="sm"
-                className="bg-[#25D366] hover:bg-[#128C7E] text-white text-[10px] font-bold h-8 transition-transform hover:scale-105"
-                onClick={() => {
-                  const encodedMsg = encodeURIComponent(initialMessage);
-                  window.open(`https://wa.me/55${p}?text=${encodedMsg}`, "_blank");
-                }}
-              >
-                <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
-                WhatsApp ({p.slice(-4)})
-              </Button>
-            ));
+            return (
+              <>
+                {waNumbers.map((p, idx) => (
+                  <Button
+                    key={`wa-${idx}`}
+                    size="sm"
+                    className="bg-[#25D366] hover:bg-[#128C7E] text-white text-[10px] font-bold h-8 transition-transform hover:scale-105 shadow-sm"
+                    onClick={() => {
+                      const encodedMsg = encodeURIComponent(initialMessage);
+                      window.open(`https://wa.me/55${p}?text=${encodedMsg}`, "_blank");
+                    }}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+                    WhatsApp ({p.slice(-4)})
+                  </Button>
+                ))}
+
+                {fixedNumbers.map((p, idx) => (
+                  <Button
+                    key={`fixed-${idx}`}
+                    size="sm"
+                    variant="outline"
+                    className="border-muted-foreground/30 text-muted-foreground text-[10px] font-bold h-8 opacity-60 hover:opacity-100"
+                    title="Telefone Fixo - Provavelmente sem WhatsApp"
+                    onClick={() => {
+                      const encodedMsg = encodeURIComponent(initialMessage);
+                      window.open(`https://wa.me/55${p}?text=${encodedMsg}`, "_blank");
+                    }}
+                  >
+                    Fixo ({p.slice(-4)})
+                  </Button>
+                ))}
+              </>
+            );
           })()}
         </div>
       </div>

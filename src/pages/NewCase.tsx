@@ -701,12 +701,21 @@ export default function NewCase() {
           if (!aiSuccess) ext.summary += " (Importação rápida/Sem análise de IA)";
         }
 
-        // 6. Save automatically
+        // 6. Heuristic: Prioritize mobile numbers for Telefone Consulta
+        const allExtractedPhones = (ext.all_phones || ext.phone_contract || ext.phone_found || ext.phone || "")
+          .split(/[\s,;|]+/)
+          .map((p: string) => p.replace(/\D/g, ""))
+          .filter((p: string) => p.length >= 10);
+
+        const primaryMobile = allExtractedPhones.find((p: string) => p.length === 11 && p[2] === "9");
+        const finalPhoneSource = primaryMobile || allExtractedPhones[0] || "";
+
+        // 7. Save automatically
         await performSave({
           clientName: clientNameFinal,
           clientCpf: ext.client_cpf || "",
-          phoneSource: (ext.phone_contract || "").replace(/\D/g, ""),
-          phoneContractSource: (ext.all_phones || ext.phone_contract || ext.phone_found || ext.phone || "").replace(/[^\d,\s]/g, ""),
+          phoneSource: finalPhoneSource,
+          phoneContractSource: allExtractedPhones.join(" "),
           caseTitle: ext.case_type ? `${ext.case_type} — ${clientNameFinal}` : `Ofício — ${clientNameFinal}`,
           defendant: ext.defendant || "",
           caseType: ext.case_type || "",
