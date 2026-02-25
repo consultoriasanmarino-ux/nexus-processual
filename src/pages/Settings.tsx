@@ -44,40 +44,48 @@ export default function Settings() {
                 return;
             }
 
-            toast.info(`Processando ${clients.length} clientes...`);
+            toast.info(`Processando ${clients.length} clientes... Removendo números sem WhatsApp (Fixo/Inválidos).`);
 
-            const smartClean = (val: string) => {
+            const strictWhatsAppOnly = (val: string) => {
                 if (!val) return "";
                 let digits = val.replace(/\D/g, "");
 
+                // Remove prefixo 55
                 if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
                     digits = digits.substring(2);
                 }
 
-                const normalized: string[] = [];
+                const validNumbers: string[] = [];
                 let remaining = digits;
 
                 while (remaining.length >= 10) {
-                    const isMobile = remaining.length >= 11 && remaining[2] === "9";
+                    // Padrão Celular Brasil: 11 dígitos E 3º dígito é 9
+                    const isMobile = remaining.length === 11 && remaining[2] === "9";
                     const size = isMobile ? 11 : 10;
-                    normalized.push(remaining.substring(0, size));
+
+                    const part = remaining.substring(0, size);
+                    if (isMobile) {
+                        validNumbers.push(part);
+                    }
                     remaining = remaining.substring(size);
                 }
 
-                if (normalized.length === 0) return digits;
-                if (normalized.length === 1 && remaining.length === 0) return normalized[0];
-
-                return normalized.join(" ");
+                // Retorna APENAS os celulares encontrados, ou vazio se não houver nenhum
+                return validNumbers.join(" ");
             };
 
             for (const client of clients) {
-                const p1 = smartClean(client.phone || "");
-                const p2 = smartClean(client.phone_contract || "");
+                const p1 = strictWhatsAppOnly(client.phone || "");
+                const p2 = strictWhatsAppOnly(client.phone_contract || "");
 
+                // Se o resultado da limpeza radical for diferente do atual, atualiza
                 if (p1 !== (client.phone || "") || p2 !== (client.phone_contract || "")) {
                     const { error: updateError } = await supabase
                         .from("clients")
-                        .update({ phone: p1, phone_contract: p2 } as any)
+                        .update({
+                            phone: p1,
+                            phone_contract: p2
+                        } as any)
                         .eq("id", client.id);
 
                     if (!updateError) {
@@ -86,7 +94,7 @@ export default function Settings() {
                     }
                 }
             }
-            toast.success(`Limpeza concluída! ${updatedCount} clientes de ${clients.length} foram corrigidos.`);
+            toast.success(`Limpeza Radical concluída! ${updatedCount} clientes tiveram números fixos/inválidos removidos.`);
         } catch (err: any) {
             console.error(err);
             toast.error("Erro na limpeza: " + err.message);
