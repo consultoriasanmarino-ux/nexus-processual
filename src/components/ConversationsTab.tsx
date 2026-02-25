@@ -167,20 +167,54 @@ export function ConversationsTab({ caseId, caseData, conversations, messages, on
 
   return (
     <div className="flex flex-col h-[600px] bg-card border border-border rounded-xl overflow-hidden shadow-card">
-      {/* Sugestão Inicial */}
+      {/* Sugestão Inicial & WhatsApp Actions */}
       <div className="bg-secondary/40 border-b border-border p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] font-bold text-primary uppercase tracking-widest flex items-center gap-1.5">
             <Info className="w-3 h-3" /> Sugestão Inicial
           </span>
-          <Button size="sm" variant="outline" className="h-7 text-[10px] font-bold uppercase transition-all hover:bg-primary hover:text-primary-foreground" onClick={copyInitialMessage}>
-            {copied ? <Check className="w-3 h-3 mr-1" /> : <Copy className="w-3 h-3 mr-1" />}
-            {copied ? "Copiado" : "Copiar"}
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" className="h-7 text-[10px] font-bold uppercase transition-all hover:bg-primary hover:text-primary-foreground" onClick={copyInitialMessage}>
+              {copied ? <Check className="w-3 h-3 mr-1" /> : <Copy className="w-3 h-3 mr-1" />}
+              {copied ? "Copiado" : "Copiar Texto"}
+            </Button>
+          </div>
         </div>
-        <p className="text-xs text-muted-foreground italic leading-relaxed bg-black/20 p-2.5 rounded border border-white/5 whitespace-pre-wrap">
+        <p className="text-xs text-muted-foreground italic leading-relaxed bg-black/20 p-2.5 rounded border border-white/5 whitespace-pre-wrap mb-3">
           {initialMessage}
         </p>
+
+        {/* WhatsApp Buttons for found phones */}
+        <div className="flex flex-wrap gap-2">
+          {(() => {
+            const client = (caseData as any).clients;
+            const allPhones = `${client?.phone_contract || ""} ${client?.phone || ""}`
+              .split(/[\s,;|]+/)
+              .filter(p => p.replace(/\D/g, "").length >= 10);
+
+            // Deduplicate
+            const uniquePhones = Array.from(new Set(allPhones.map(p => p.replace(/\D/g, ""))));
+
+            if (uniquePhones.length === 0) {
+              return <span className="text-[10px] text-muted-foreground italic">Nenhum número encontrado para este cliente.</span>;
+            }
+
+            return uniquePhones.map((p, idx) => (
+              <Button
+                key={idx}
+                size="sm"
+                className="bg-[#25D366] hover:bg-[#128C7E] text-white text-[10px] font-bold h-8 transition-transform hover:scale-105"
+                onClick={() => {
+                  const encodedMsg = encodeURIComponent(initialMessage);
+                  window.open(`https://wa.me/55${p}?text=${encodedMsg}`, "_blank");
+                }}
+              >
+                <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+                WhatsApp ({p.slice(-4)})
+              </Button>
+            ));
+          })()}
+        </div>
       </div>
 
       <ScrollArea className="flex-1 p-4" ref={scrollRef}>

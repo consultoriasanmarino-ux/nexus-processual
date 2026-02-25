@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Sparkles, Loader2, AlertTriangle, Building2, User, Gavel, Save, BookOpen, DollarSign, CalendarIcon, ClipboardList, Phone, Pencil, Car, Banknote, BriefcaseIcon, Milestone } from "lucide-react";
+import { Sparkles, Loader2, AlertTriangle, Building2, User, Gavel, Save, BookOpen, DollarSign, CalendarIcon, ClipboardList, Phone, Pencil, Car, Banknote, BriefcaseIcon, Milestone, MessageSquare, Plus } from "lucide-react";
 import { toast } from "sonner";
 import type { Case, Document, AiOutput } from "@/lib/types";
 import ReactMarkdown from "react-markdown";
@@ -58,60 +58,93 @@ function ClientPhoneEditor({ client, onRefresh }: { client: any; onRefresh: () =
     setPhoneValue(val || "");
   };
 
+  const phones = client.phone?.split(/[\s,;|]+/).filter(Boolean) || [];
+  const contractPhones = client.phone_contract?.split(/[\s,;|]+/).filter(Boolean) || [];
+
+  const openWhatsApp = (p: string) => {
+    const clean = p.replace(/\D/g, "");
+    if (clean.length >= 10) {
+      window.open(`https://wa.me/55${clean}`, "_blank");
+    } else {
+      toast.error("Número inválido para WhatsApp");
+    }
+  };
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-4">
       {/* Telefone Consulta */}
-      <div className="flex flex-col gap-1">
-        <span className="text-[10px] text-muted-foreground uppercase font-semibold">Telefone Consulta</span>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Telefone Principal</span>
         {editingField === "phone" ? (
-          <div className="flex items-center gap-1.5">
-            <Input value={phoneValue} onChange={(e) => setPhoneValue(formatPhone(e.target.value))} placeholder="(11) 99999-9999" className="h-7 w-40 text-xs bg-secondary border-border" />
-            <Button size="sm" variant="outline" onClick={handleSave} disabled={saving} className="h-7 text-xs px-2">
+          <div className="flex items-center gap-1.5 animate-in slide-in-from-left-2">
+            <Input value={phoneValue} onChange={(e) => setPhoneValue(e.target.value)} placeholder="(11) 99999-9999" className="h-8 max-w-[200px] text-xs bg-secondary border-border" />
+            <Button size="sm" variant="outline" onClick={handleSave} disabled={saving} className="h-8 text-xs px-2 bg-primary/10 hover:bg-primary/20 border-primary/20">
               {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setEditingField(null)} className="h-7 text-xs px-2">Cancelar</Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditingField(null)} className="h-8 text-xs px-2">X</Button>
           </div>
         ) : (
-          <div className="flex items-center gap-1.5 px-2 py-1">
-            <Phone className="w-3 h-3 text-muted-foreground" />
-            <span className={`text-xs ${!client.phone?.trim() ? 'text-muted-foreground/60 italic' : 'text-muted-foreground'}`}>
-              {formatPhone(client.phone) || "Não informado"}
-            </span>
-            <button onClick={() => startEditing("phone", client.phone)} className="text-muted-foreground hover:text-foreground transition-colors">
-              <Pencil className="w-3 h-3" />
-            </button>
+          <div className="flex flex-wrap gap-2">
+            {phones.length > 0 ? phones.map((p, idx) => (
+              <div key={idx} className="flex items-center gap-2 bg-secondary/30 border border-border/50 rounded-lg px-2.5 py-1.5 group transition-colors hover:border-primary/30">
+                <Phone className="w-3 h-3 text-muted-foreground" />
+                <span className="text-xs font-semibold">{formatPhone(p)}</span>
+                <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => openWhatsApp(p)} title="Abrir no WhatsApp" className="text-[#25D366] hover:scale-110 transition-transform">
+                    <MessageSquare className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => startEditing("phone", client.phone)} className="text-muted-foreground hover:text-foreground">
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )) : (
+              <button
+                onClick={() => startEditing("phone", "")}
+                className="text-[10px] text-muted-foreground italic flex items-center gap-1 hover:text-primary transition-colors"
+              >
+                <Plus className="w-3 h-3" /> Adicionar telefone
+              </button>
+            )}
           </div>
         )}
       </div>
 
-      {/* Telefone Contrato */}
-      <div className="flex flex-col gap-1">
-        <span className="text-[10px] text-muted-foreground uppercase font-semibold">Telefone do Contrato</span>
+      {/* Telefone Contrato / Múltiplos */}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Telefones Localizados (Contrato)</span>
         {editingField === "phone_contract" ? (
-          <div className="flex items-center gap-1.5">
-            <Input value={phoneValue} onChange={(e) => setPhoneValue(formatPhone(e.target.value))} placeholder="(11) 99999-9999" className="h-7 w-40 text-xs bg-secondary border-border" />
-            <Button size="sm" variant="outline" onClick={handleSave} disabled={saving} className="h-7 text-xs px-2">
+          <div className="flex items-center gap-1.5 animate-in slide-in-from-left-2">
+            <Input value={phoneValue} onChange={(e) => setPhoneValue(e.target.value)} placeholder="Números separados por vírgula" className="h-8 flex-1 text-xs bg-secondary border-border" />
+            <Button size="sm" variant="outline" onClick={handleSave} disabled={saving} className="h-8 text-xs px-2 bg-primary/10 hover:bg-primary/20 border-primary/20">
               {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setEditingField(null)} className="h-7 text-xs px-2">Cancelar</Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditingField(null)} className="h-8 text-xs px-2">X</Button>
           </div>
         ) : (
-          <div className={cn(
-            "flex items-center gap-1.5 px-2 py-1 rounded-md",
-            !client.phone_contract?.trim() && !client.phone?.trim() ? "bg-destructive/10 border border-destructive/20" : "bg-secondary/50"
-          )}>
-            {!client.phone_contract?.trim() && !client.phone?.trim() && <AlertTriangle className="w-3 h-3 text-destructive" />}
-            <Phone className={cn("w-3 h-3", client.phone_contract?.trim() ? "text-primary" : "text-muted-foreground")} />
-            <span className={cn(
-              "text-xs",
-              !client.phone_contract?.trim() && !client.phone?.trim() ? "text-destructive font-medium" :
-                !client.phone_contract?.trim() ? "text-muted-foreground italic" : "text-foreground font-semibold"
-            )}>
-              {formatPhone(client.phone_contract) || "Não extraído"}
-            </span>
-            <button onClick={() => startEditing("phone_contract", client.phone_contract)} className="text-muted-foreground hover:text-foreground transition-colors">
-              <Pencil className="w-3 h-3" />
-            </button>
+          <div className="flex flex-wrap gap-2">
+            {contractPhones.length > 0 ? contractPhones.map((p, idx) => (
+              <div key={idx} className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-2.5 py-1.5 group transition-all hover:bg-primary/10">
+                <Phone className="w-3 h-3 text-primary" />
+                <span className="text-xs font-bold text-foreground">{formatPhone(p)}</span>
+                <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => openWhatsApp(p)} title="Abrir no WhatsApp" className="text-[#25D366] hover:scale-110 transition-transform">
+                    <MessageSquare className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => startEditing("phone_contract", client.phone_contract)} className="text-muted-foreground hover:text-foreground">
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )) : (
+              <div
+                className="bg-destructive/5 border border-destructive/20 rounded-lg px-2.5 py-1.5 flex items-center gap-2 cursor-pointer hover:bg-destructive/10 transition-colors"
+                onClick={() => startEditing("phone_contract", "")}
+              >
+                <AlertTriangle className="w-3 h-3 text-destructive" />
+                <span className="text-[10px] text-destructive-foreground font-medium uppercase">Nenhum no contrato</span>
+              </div>
+            )}
           </div>
         )}
       </div>

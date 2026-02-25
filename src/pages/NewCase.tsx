@@ -617,14 +617,31 @@ export default function NewCase() {
     setZipProgress(0);
 
     const initialStatus: typeof zipStatus = {};
-    zipFolders.forEach(f => {
-      initialStatus[f] = { status: 'pending' };
-    });
-    setZipStatus(initialStatus);
-
     const zip = await JSZip.loadAsync(zipFile);
+
+    // 1. Pre-index the ZIP for O(1) folder access
+    console.log("Indexing ZIP contents...");
+    const folderIndex: Record<string, { pdf?: JSZip.JSZipObject, txt?: JSZip.JSZipObject }> = {};
+
+    zip.forEach((relativePath, entry) => {
+      if (entry.dir) return;
+      const parts = relativePath.split("/");
+      if (parts.length === 2) {
+        const folder = parts[0];
+        const fileName = parts[1].toLowerCase();
+
+        if (!folderIndex[folder]) folderIndex[folder] = {};
+
+        if (fileName.endsWith(".pdf") && !folderIndex[folder].pdf) {
+          folderIndex[folder].pdf = entry;
+        } else if (fileName.endsWith(".txt") && !folderIndex[folder].txt) {
+          folderIndex[folder].txt = entry;
+        }
+      }
+    });
+
     let completedCount = 0;
-    const CONCURRENCY = 8; // Process 8 folders at a time
+    const CONCURRENCY = 8;
     const foldersToProcess = [...zipFolders];
 
     const processFolder = async (folderName: string) => {
@@ -634,64 +651,57 @@ export default function NewCase() {
       }));
 
       try {
-        // 1. Find PDF and TXT files in this folder
-        let pdfEntry: JSZip.JSZipObject | null = null;
-        let txtEntry: JSZip.JSZipObject | null = null;
-
-        zip.forEach((relativePath, entry) => {
-          const parts = relativePath.split("/");
-          if (parts[0] === folderName && parts.length === 2 && !entry.dir) {
-            const fileName = parts[1].toLowerCase();
-            if (fileName.endsWith(".pdf") && !pdfEntry) {
-              pdfEntry = entry;
-            } else if (fileName.endsWith(".txt") && !txtEntry) {
-              txtEntry = entry;
-            }
-          }
-        });
-
-        if (!pdfEntry) {
+        const entries = folderIndex[folderName];
+        if (!entries || !entries.pdf) {
           throw new Error("Nenhum PDF (ofício) encontrado na pasta.");
         }
+
+        const pdfEntry = entries.pdf;
+        const txtEntry = entries.txt;
 
         // 2. Extract text from TXT
         let txtContent = "";
         if (txtEntry) {
-          const txtBlob = await (txtEntry as JSZip.JSZipObject).async("blob");
+          const txtBlob = await txtEntry.async("blob");
           txtContent = await txtBlob.text();
         }
 
-        // 3. Extract text from PDF (ofício) - Extract ONCE here
-        const pdfBlob = await (pdfEntry as JSZip.JSZipObject).async("blob");
-        const pdfFileName = (pdfEntry as JSZip.JSZipObject).name.split("/").pop() || "oficio.pdf";
-        const pdfFile = new File([pdfBlob], pdfFileName, { type: "application/pdf" });
-        const oficioText = await extractTextFromPdf(pdfFile);
+        // 3. Extract text from PDF (ofício)
+        const pdfBlob = await pdfEntry.async("blob");
+        const pdfFileName = pdfEntry.name.split("/").pop() || "oficio.pdf";
+        const pdfFileInstance = new File([pdfBlob], pdfFileName, { type: "application/pdf" });
+        const oficioText = await extractTextFromPdf(pdfFileInstance);
 
-        // 4. Analyze with AI (using the ofício-specific function)
-        const result = await aiAnalyzeOficio({
-          oficioText,
-          txtContent,
-          folderName,
-        });
-
-        if (!result.success) throw new Error(result.error || "Erro na análise da IA");
-        const ext = result.extracted as any;
-
-        // 5. Format & extract process number
-        const pNum = formatProcessNumber(ext.process_number || extractProcessNumberFromFilename(pdfFileName) || "");
-
-        // Extract client name from folder if AI didn't find it
-        let clientNameFinal = ext.client_name || "";
-        if (!clientNameFinal || clientNameFinal === "Desconhecido") {
-          const folderMatch = folderName.match(/^\d+\s*[-–]?\s*(.+)$/);
-          if (folderMatch) {
-            clientNameFinal = folderMatch[1].trim();
-          } else {
-            clientNameFinal = folderName;
+        // 4. Analyze with AI
+        let ext: any = {};
+        let aiSuccess = false;
+        try {
+          const result = await aiAnalyzeOficio({
+            oficioText,
+            txtContent,
+            folderName,
+          });
+          if (result.success && result.extracted) {
+            ext = result.extracted;
+            aiSuccess = true;
           }
+        } catch (aiErr: any) {
+          console.warn(`AI failed for ${folderName}, using fallback:`, aiErr.message);
         }
 
-        // 6. Save automatically - Pass pre-extracted text to avoid double work
+        // 5. Fallback logic if AI fails
+        const clientMatch = folderName.match(/^\d+\s*[-–]?\s*(.+)$/);
+        const clientNameFinal = ext.client_name || (clientMatch ? clientMatch[1].trim() : folderName);
+        const pNum = formatProcessNumber(ext.process_number || extractProcessNumberFromFilename(pdfFileName) || "");
+
+        // Generate generic summary if AI failed
+        if (!aiSuccess || !ext.summary) {
+          const defendantClean = ext.defendant || "a parte ré";
+          ext.summary = `Processo de ${ext.case_type || 'ação judicial'} contra ${defendantClean}. Os dados foram importados via ZIP.`;
+          if (!aiSuccess) ext.summary += " (Importação rápida/Sem análise de IA)";
+        }
+
+        // 6. Save automatically
         await performSave({
           clientName: clientNameFinal,
           clientCpf: ext.client_cpf || "",
@@ -711,9 +721,9 @@ export default function NewCase() {
           clientNetValue: ext.client_net_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
           lawyerType,
           selectedLawyerId,
-          pdfFile: pdfFile,
-          preExtractedText: oficioText, // New parameter to avoid re-extraction
-          extractedJson: { ...ext, source: "zip_import", folder_name: folderName, txt_content: txtContent }
+          pdfFile: pdfFileInstance,
+          preExtractedText: oficioText,
+          extractedJson: { ...ext, source: "zip_import", folder_name: folderName, txt_content: txtContent, ai_failed: !aiSuccess }
         });
 
         setZipStatus(prev => ({

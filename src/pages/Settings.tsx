@@ -5,7 +5,7 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Trash2, Save, Loader2, Scale, UserCheck, Headphones, ShieldCheck, Phone, Check, Key, Sparkles, Pencil, CheckSquare, Square, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, Save, Loader2, Scale, UserCheck, Headphones, ShieldCheck, Phone, Check, Key, Sparkles, Pencil, CheckSquare, Square, AlertTriangle, Settings as SettingsIcon, Database } from "lucide-react";
 import { toast } from "sonner";
 import type { Lawyer, Caller } from "@/lib/types";
 import {
@@ -17,11 +17,48 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 
-type SettingsTab = "advogados" | "tecladores" | "api_keys";
+type SettingsTab = "advogados" | "tecladores" | "api_keys" | "sistema";
 
 export default function Settings() {
     const { user } = useAuth();
     const [activeTab, setActiveTab] = useState<SettingsTab>("advogados");
+
+    // Database Cleaning state
+    const [cleaning, setCleaning] = useState(false);
+    const [cleanStats, setCleanStats] = useState({ total: 0, updated: 0 });
+
+    const handleDatabaseCleanup = async () => {
+        if (!confirm("Isso irá formatar e limpar os números de telefone de TODOS os clientes para o formato WhatsApp. Continuar?")) return;
+        setCleaning(true);
+        try {
+            const { data: clients } = await supabase.from("clients").select("id, phone, phone_contract");
+            if (!clients) return;
+
+            setCleanStats({ total: clients.length, updated: 0 });
+            let updatedCount = 0;
+
+            for (const client of clients) {
+                const cleanPhone = (p: string) => (p || "").replace(/\D/g, "");
+                const p1 = cleanPhone(client.phone || "");
+                const p2 = cleanPhone(client.phone_contract || "");
+
+                if (p1 !== client.phone || p2 !== client.phone_contract) {
+                    await supabase.from("clients").update({
+                        phone: p1,
+                        phone_contract: p2
+                    }).eq("id", client.id);
+                    updatedCount++;
+                    setCleanStats(prev => ({ ...prev, updated: updatedCount }));
+                }
+            }
+            toast.success(`Limpeza concluída! ${updatedCount} clientes atualizados.`);
+        } catch (err) {
+            console.error(err);
+            toast.error("Erro na limpeza.");
+        } finally {
+            setCleaning(false);
+        }
+    };
 
     // Lawyers state
     const [lawyers, setLawyers] = useState<Lawyer[]>([]);
@@ -349,6 +386,16 @@ export default function Settings() {
                         <Key className="w-3.5 h-3.5" />
                         Chaves Gemini 2.5
                         <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded-full">{apiKeys.length}</span>
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("sistema")}
+                        className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-all duration-200 flex items-center gap-2 ${activeTab === "sistema"
+                            ? "bg-blue-500/20 text-blue-300 border-blue-500/40 shadow-md"
+                            : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/50"
+                            }`}
+                    >
+                        <SettingsIcon className="w-3.5 h-3.5" />
+                        Sistema
                     </button>
                 </div>
 
@@ -796,6 +843,69 @@ export default function Settings() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+            {/* ===== TAB: SISTEMA ===== */}
+            {activeTab === "sistema" && (
+                <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
+                    <div className="bg-card border border-border rounded-xl p-8 shadow-card space-y-6">
+                        <div className="flex items-center gap-3 border-b border-border pb-4">
+                            <div className="p-2 bg-blue-500/10 rounded-lg">
+                                <Database className="w-5 h-5 text-blue-400" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold">Manutenção do Sistema</h3>
+                                <p className="text-xs text-muted-foreground">Ferramentas de integridade e limpeza de dados.</p>
+                            </div>
+                        </div>
+
+                        <div className="bg-secondary/20 border border-border/50 rounded-xl p-6 flex flex-col sm:flex-row items-center justify-between gap-6 hover:bg-secondary/30 transition-colors">
+                            <div className="space-y-2 flex-1">
+                                <h4 className="text-sm font-bold flex items-center gap-2">
+                                    <Phone className="w-4 h-4 text-[#25D366]" /> Limpeza de Telefones (WhatsApp)
+                                </h4>
+                                <p className="text-xs text-muted-foreground leading-relaxed">
+                                    Processa todos os clientes para manter apenas dígitos nos telefones.
+                                    Isso corrige botões de WhatsApp que não abrem e remove caracteres como `()`, `-` e espaços.
+                                </p>
+                            </div>
+                            <Button
+                                onClick={handleDatabaseCleanup}
+                                disabled={cleaning}
+                                className="bg-blue-600 hover:bg-blue-700 text-white min-w-[180px] h-11 font-bold shadow-lg shadow-blue-900/20"
+                            >
+                                {cleaning ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                        Processando...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Sparkles className="w-4 h-4 mr-2" />
+                                        Limpar Banco
+                                    </>
+                                )}
+                            </Button>
+                        </div>
+
+                        {cleaning && (
+                            <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                                <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                                    <span>Progresso da Limpeza</span>
+                                    <span>{Math.round((cleanStats.updated / (cleanStats.total || 1)) * 100)}%</span>
+                                </div>
+                                <div className="h-2 w-full bg-secondary rounded-full overflow-hidden border border-border">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all duration-500 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                                        style={{ width: `${(cleanStats.updated / (cleanStats.total || 1)) * 100}%` }}
+                                    />
+                                </div>
+                                <p className="text-[10px] text-center text-muted-foreground font-medium">
+                                    {cleanStats.updated} clientes atualizados de {cleanStats.total} totalizados no sistema.
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </Layout>
     );
 }
