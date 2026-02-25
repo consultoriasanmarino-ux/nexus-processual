@@ -46,6 +46,7 @@ interface ExtractedData {
   summary: string;
   phone_found: string;
   phone_contract: string;
+  birth_date?: string;
 }
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -93,6 +94,7 @@ export default function NewCase() {
   const [lawyerFeePercent, setLawyerFeePercent] = useState("");
   const [lawyerFeeValue, setLawyerFeeValue] = useState("");
   const [clientNetValue, setClientNetValue] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [isDanosMorais, setIsDanosMorais] = useState(false);
 
   const updateFinancials = (p?: string, pct?: string, f?: string) => {
@@ -231,6 +233,8 @@ export default function NewCase() {
         setPartnerLawyer(ext.lawyers.map((l: any) => `${l.name} (${l.oab})`).join(", "));
       }
 
+      setBirthDate(ext.birth_date || "");
+
       // Robust phone mapping: catch any field the AI might use
       const extractedPhone = ext.phone_contract || ext.phone_petition || ext.phone_found || ext.phone;
       if (extractedPhone) {
@@ -294,6 +298,7 @@ export default function NewCase() {
         lawyerType,
         selectedLawyerId,
         pdfFile,
+        birthDate,
         extractedJson: extracted
       });
 
@@ -323,6 +328,7 @@ export default function NewCase() {
     lawyerFeePercent: string;
     lawyerFeeValue: string;
     clientNetValue: string;
+    birthDate?: string;
     lawyerType: string;
     selectedLawyerId: string;
     pdfFile: File | null;
@@ -352,6 +358,7 @@ export default function NewCase() {
       const updates: any = {};
       if (data.phoneSource && !clientData.phone) updates.phone = data.phoneSource;
       if (data.phoneContractSource && !clientData.phone_contract) updates.phone_contract = data.phoneContractSource;
+      if (data.birthDate && !clientData.birth_date) updates.birth_date = data.birthDate;
 
       if (Object.keys(updates).length > 0) {
         const { data: updated } = await supabase
@@ -371,6 +378,7 @@ export default function NewCase() {
           cpf_or_identifier: cleanCpf || null,
           phone: data.phoneSource || "",
           phone_contract: data.phoneContractSource || "",
+          birth_date: data.birthDate || null,
           user_id: user.id,
         } as any)
         .select()
@@ -393,6 +401,12 @@ export default function NewCase() {
         .maybeSingle();
 
       if (existingCase) {
+        // Lead Import Rule: If it already exists, IGNORE (as requested)
+        if (data.extractedJson?.source === "zip_import" || data.extractedJson?.source === "bulk_import") {
+          console.log("Ignorando caso repetido:", data.processNumber);
+          return existingCase;
+        }
+
         console.log("Existing case found, updating values:", data.processNumber);
         const { data: updatedCase, error: updateErr } = await supabase
           .from("cases")
@@ -546,10 +560,11 @@ export default function NewCase() {
           lawyerFeePercent: ext.lawyer_fee_percent?.toString() || "",
           lawyerFeeValue: ext.lawyer_fee_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
           clientNetValue: ext.client_net_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
+          birthDate: ext.birth_date || "",
           lawyerType,
           selectedLawyerId,
           pdfFile: file,
-          extractedJson: ext
+          extractedJson: { ...ext, source: "bulk_import" }
         });
 
         setBulkStatus(prev => ({
@@ -749,14 +764,38 @@ export default function NewCase() {
           if (!aiSuccess) ext.summary += " (Importação rápida/Sem análise de IA)";
         }
 
-        // 6. Strict WhatsApp Filter: Keep only Brazilian mobiles (11 digits, starts with 9)
+        // 6. WhatsApp Filter (Standard)
         const allExtractedPhones = (ext.all_phones || ext.phone_contract || ext.phone_found || ext.phone || "")
           .split(/[\s,;|]+/)
           .map((p: string) => p.replace(/\D/g, ""))
-          .filter((p: string) => p.length === 11 && p[2] === "9"); // ONLY WhatsApp numbers
+          .filter((p: string) => p.length >= 10); // Standard length check
 
-        // Remove duplicates
-        const uniqueWhatsApp = Array.from(new Set(allExtractedPhones));
+        // 6.1 Real WhatsApp Verification (Bridge)
+        let uniqueWhatsApp = Array.from(new Set(allExtractedPhones));
+        const bridgeUrl = localStorage.getItem("nexus_wa_bridge");
+
+        if (bridgeUrl && uniqueWhatsApp.length > 0) {
+          try {
+            const verRes = await fetch(`${bridgeUrl}/verify`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ numbers: uniqueWhatsApp })
+            });
+            if (verRes.ok) {
+              const { validNumbers } = await verRes.json();
+              uniqueWhatsApp = validNumbers;
+              console.log(`WhatsApp Bridge: ${uniqueWhatsApp.length} números válidos encontrados para ${folderName}`);
+            }
+          } catch (e) {
+            console.warn("WhatsApp Bridge indisponível, seguindo com filtro padrão.");
+            // Fallback to basic mobile filter if bridge fails
+            uniqueWhatsApp = uniqueWhatsApp.filter((p: string) => p.length === 11 && p[2] === "9");
+          }
+        } else {
+          // No bridge, use standard mobile filter
+          uniqueWhatsApp = uniqueWhatsApp.filter((p: string) => p.length === 11 && p[2] === "9");
+        }
+
         const finalPhoneSource = uniqueWhatsApp[0] || ""; // Primary is the first valid mobile found
 
         // Fix missing summary and handle AI failure gracefully
@@ -791,6 +830,7 @@ export default function NewCase() {
           selectedLawyerId,
           pdfFile: pdfFileInstance,
           preExtractedText: oficioText,
+          birthDate: ext.client_birth_date || "",
           extractedJson: { ...ext, source: "zip_import", folder_name: folderName, txt_content: txtContent, ai_failed: !aiSuccess }
         });
 
@@ -1383,6 +1423,10 @@ export default function NewCase() {
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">CPF</Label>
                   <Input value={formatCPF(clientCpf)} onChange={(e) => setClientCpf(e.target.value)} className="bg-secondary border-border" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Data de Nascimento</Label>
+                  <Input value={birthDate} onChange={(e) => setBirthDate(e.target.value)} placeholder="01/01/1980" className="bg-secondary border-border" />
                 </div>
               </div>
 

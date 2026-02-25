@@ -28,7 +28,8 @@ export interface Caller {
   id: string;
   user_id: string;
   name: string;
-  pin: string;
+  username: string;
+  password: string;
   lawyer_ids: string[];
   active: boolean;
   created_at: string;

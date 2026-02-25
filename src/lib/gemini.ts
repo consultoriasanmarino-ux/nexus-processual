@@ -171,6 +171,7 @@ Responda APENAS com JSON:
 {
   "client_name": "NOME COMPLETO",
   "client_cpf": "CPF_SO_DIGITOS",
+  "birth_date": "DATA_NASCIMENTO",
   "defendant": "BANCO_REU/INSS/ETC",
   "case_type": "TIPO_DA_ACAO",
   "court": "VARA_E_COMARCA",

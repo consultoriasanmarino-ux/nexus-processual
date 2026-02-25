@@ -25,6 +25,7 @@ export default function Settings() {
     const [waBridgeUrl, setWaBridgeUrl] = useState(() => localStorage.getItem("nexus_wa_bridge") || "");
     const [testingWa, setTestingWa] = useState(false);
     const [waStatus, setWaStatus] = useState<'connected' | 'disconnected' | 'checking'>('disconnected');
+    const [waQrCode, setWaQrCode] = useState<string | null>(null);
 
     // Database Cleaning state
     const [cleaning, setCleaning] = useState(false);
@@ -36,29 +37,39 @@ export default function Settings() {
         toast.success("Configuração do Bridge salva!");
     };
 
-    const testWaConnection = async () => {
-        if (!waBridgeUrl) { toast.error("Informe a URL do Bridge."); return; }
-        setTestingWa(true);
+    const testWaConnection = async (testing: boolean = false) => {
+        if (!waBridgeUrl) return;
+        if (!testing) setTestingWa(true);
         setWaStatus('checking');
         try {
             const res = await fetch(`${waBridgeUrl}/status`);
             if (res.ok) {
                 const data = await res.json();
+                setWaQrCode(data.qrCodeString || null);
                 if (data.active) {
                     setWaStatus('connected');
-                    toast.success("WhatsApp Bridge conectado e ativo!");
+                    setWaQrCode(null);
+                    if (!testing) toast.success("WhatsApp Bridge conectado e ativo!");
                 } else {
                     setWaStatus('disconnected');
-                    toast.error("Bridge online, mas WhatsApp não está autenticado.");
                 }
             } else throw new Error();
         } catch {
             setWaStatus('disconnected');
-            toast.error("Não foi possível alcançar o Bridge. Verifique se o servidor local está rodando.");
+            setWaQrCode(null);
         } finally {
             setTestingWa(false);
         }
     };
+
+    // Auto-refresh status while disconnected/checking
+    useEffect(() => {
+        let interval: any;
+        if (waBridgeUrl && waStatus !== 'connected') {
+            interval = setInterval(() => testWaConnection(true), 3000);
+        }
+        return () => clearInterval(interval);
+    }, [waBridgeUrl, waStatus]);
 
     const handleWhatsAppCleanup = async () => {
         if (!waBridgeUrl || waStatus !== 'connected') {
@@ -200,12 +211,14 @@ export default function Settings() {
     const [callers, setCallers] = useState<Caller[]>([]);
     const [loadingCallers, setLoadingCallers] = useState(true);
     const [callerName, setCallerName] = useState("");
-    const [callerPin, setCallerPin] = useState("");
+    const [callerUsername, setCallerUsername] = useState("");
+    const [callerPassword, setCallerPassword] = useState("");
     const [callerLawyerIds, setCallerLawyerIds] = useState<string[]>([]);
     const [savingCaller, setSavingCaller] = useState(false);
     const [editingCaller, setEditingCaller] = useState<Caller | null>(null);
     const [editName, setEditName] = useState("");
-    const [editPin, setEditPin] = useState("");
+    const [editUsername, setEditUsername] = useState("");
+    const [editPassword, setEditPassword] = useState("");
     const [editLawyerIds, setEditLawyerIds] = useState<string[]>([]);
     const [updatingCaller, setUpdatingCaller] = useState(false);
 
@@ -359,15 +372,12 @@ export default function Settings() {
 
     const handleAddCaller = async () => {
         if (!callerName.trim()) { toast.error("Nome do teclador é obrigatório."); return; }
-        if (!callerPin || callerPin.length !== 6 || !/^\d{6}$/.test(callerPin)) {
-            toast.error("O PIN deve ter exatamente 6 dígitos numéricos."); return;
-        }
-        if (callerPin === "171033") {
-            toast.error("Este PIN é reservado para o admin."); return;
-        }
-        // Check for duplicate PINs
-        const existing = callers.find((c) => c.pin === callerPin);
-        if (existing) { toast.error(`PIN já em uso por: ${existing.name}`); return; }
+        if (!callerUsername.trim()) { toast.error("Usuário é obrigatório."); return; }
+        if (!callerPassword.trim()) { toast.error("Senha é obrigatória."); return; }
+
+        // Check for duplicate usernames
+        const existing = callers.find((c) => c.username === callerUsername.trim());
+        if (existing) { toast.error(`Usuário já em uso por: ${existing.name}`); return; }
         if (callerLawyerIds.length === 0) { toast.error("Selecione ao menos um advogado para o teclador."); return; }
         if (!user) return;
 
@@ -375,14 +385,15 @@ export default function Settings() {
         const { error } = await supabase.from("callers" as any).insert({
             user_id: user.id,
             name: callerName.trim(),
-            pin: callerPin,
+            username: callerUsername.trim(),
+            password: callerPassword,
             lawyer_ids: callerLawyerIds,
             active: true,
         });
-        if (error) { toast.error("Erro ao cadastrar teclador."); console.error(error); }
+        if (error) { toast.error("Erro ao cadastrar teclador. Verifique se as colunas 'username' e 'password' existem na tabela 'callers'."); console.error(error); }
         else {
             toast.success("Teclador cadastrado!");
-            setCallerName(""); setCallerPin(""); setCallerLawyerIds([]);
+            setCallerName(""); setCallerUsername(""); setCallerPassword(""); setCallerLawyerIds([]);
             fetchCallers();
         }
         setSavingCaller(false);
@@ -409,14 +420,16 @@ export default function Settings() {
     const handleOpenEditCaller = (caller: Caller) => {
         setEditingCaller(caller);
         setEditName(caller.name);
-        setEditPin(caller.pin);
+        setEditUsername(caller.username);
+        setEditPassword(caller.password);
         setEditLawyerIds(caller.lawyer_ids || []);
     };
 
     const handleUpdateCaller = async () => {
         if (!editingCaller) return;
         if (!editName.trim()) { toast.error("Nome é obrigatório."); return; }
-        if (editPin.length !== 6) { toast.error("PIN deve ter 6 dígitos."); return; }
+        if (!editUsername.trim()) { toast.error("Usuário é obrigatório."); return; }
+        if (!editPassword.trim()) { toast.error("Senha é obrigatória."); return; }
         if (editLawyerIds.length === 0) { toast.error("Selecione ao menos um advogado."); return; }
 
         setUpdatingCaller(true);
@@ -424,7 +437,8 @@ export default function Settings() {
             .from("callers" as any)
             .update({
                 name: editName.trim(),
-                pin: editPin,
+                username: editUsername.trim(),
+                password: editPassword,
                 lawyer_ids: editLawyerIds,
             } as any)
             .eq("id", editingCaller.id);
@@ -695,95 +709,68 @@ export default function Settings() {
                             </p>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label className="text-xs text-muted-foreground">Nome *</Label>
-                                    <Input value={callerName} onChange={(e) => setCallerName(e.target.value)} placeholder="João da Silva" className="bg-secondary border-border" />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                                        <ShieldCheck className="w-3 h-3" /> PIN de Acesso (6 dígitos) *
-                                    </Label>
-                                    <Input
-                                        value={callerPin}
-                                        onChange={(e) => {
-                                            const val = e.target.value.replace(/\D/g, "").slice(0, 6);
-                                            setCallerPin(val);
-                                        }}
-                                        placeholder="000000"
-                                        className="bg-secondary border-border font-mono tracking-[0.3em] text-center"
-                                        maxLength={6}
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Lawyer selection */}
-                            <div className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <Label className="text-xs text-muted-foreground">Advogados disponíveis para este teclador *</Label>
-                                    <div className="flex gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => selectAllLawyers()}
-                                            className="text-[10px] flex items-center gap-1 text-primary hover:underline font-medium"
-                                        >
-                                            <CheckSquare className="w-3 h-3" /> Selecionar Todos
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => deselectAllLawyers()}
-                                            className="text-[10px] flex items-center gap-1 text-muted-foreground hover:underline font-medium"
-                                        >
-                                            <Square className="w-3 h-3" /> Limpar
-                                        </button>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <div className="space-y-2">
+                                        <Label className="text-xs text-muted-foreground">Nome *</Label>
+                                        <Input value={callerName} onChange={(e) => setCallerName(e.target.value)} placeholder="João da Silva" className="bg-secondary border-border" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-xs text-muted-foreground font-bold">Usuário *</Label>
+                                        <Input value={callerUsername} onChange={(e) => setCallerUsername(e.target.value)} placeholder="usuario.login" className="bg-secondary border-border" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-xs text-muted-foreground font-bold">Senha *</Label>
+                                        <Input
+                                            type="password"
+                                            value={callerPassword}
+                                            onChange={(e) => setCallerPassword(e.target.value)}
+                                            placeholder="••••••••"
+                                            className="bg-secondary border-border"
+                                        />
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    {/* Paulo Tanaka (geral) */}
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleCallerLawyer("geral")}
-                                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left text-sm transition-all ${callerLawyerIds.includes("geral")
-                                            ? "bg-primary/10 border-primary/40 text-foreground"
-                                            : "bg-secondary/50 border-border text-muted-foreground hover:border-primary/30"
-                                            }`}
-                                    >
-                                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${callerLawyerIds.includes("geral") ? "bg-primary border-primary" : "border-muted-foreground/30"
-                                            }`}>
-                                            {callerLawyerIds.includes("geral") && <Check className="w-3 h-3 text-primary-foreground" />}
-                                        </div>
-                                        <div>
-                                            <p className="font-medium text-xs">Paulo Tanaka</p>
-                                            <p className="text-[10px] text-muted-foreground">Advogado Geral</p>
-                                        </div>
-                                    </button>
 
-                                    {lawyers.map((l) => (
+                                {/* Lawyer selection */}
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <Label className="text-xs text-muted-foreground">Advogados disponíveis *</Label>
+                                        <div className="flex gap-2">
+                                            <button type="button" onClick={() => selectAllLawyers()} className="text-[10px] text-primary hover:underline">Selecionar Todos</button>
+                                            <button type="button" onClick={() => deselectAllLawyers()} className="text-[10px] text-muted-foreground hover:underline">Limpar</button>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                         <button
-                                            key={l.id}
                                             type="button"
-                                            onClick={() => toggleCallerLawyer(l.id)}
-                                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left text-sm transition-all ${callerLawyerIds.includes(l.id)
-                                                ? "bg-violet-500/10 border-violet-500/40 text-foreground"
-                                                : "bg-secondary/50 border-border text-muted-foreground hover:border-violet-500/30"
-                                                }`}
+                                            onClick={() => toggleCallerLawyer("geral")}
+                                            className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border text-left text-[11px] ${callerLawyerIds.includes("geral") ? "bg-primary/10 border-primary/40" : "bg-secondary/50 border-border"}`}
                                         >
-                                            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${callerLawyerIds.includes(l.id) ? "bg-violet-500 border-violet-500" : "border-muted-foreground/30"
-                                                }`}>
-                                                {callerLawyerIds.includes(l.id) && <Check className="w-3 h-3 text-white" />}
+                                            <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${callerLawyerIds.includes("geral") ? "bg-primary" : "border-muted-foreground/30"}`}>
+                                                {callerLawyerIds.includes("geral") && <Check className="w-2.5 h-2.5 text-primary-foreground" />}
                                             </div>
-                                            <div>
-                                                <p className="font-medium text-xs">{l.name}</p>
-                                                {l.oab && <p className="text-[10px] text-muted-foreground">OAB: {l.oab}</p>}
-                                            </div>
+                                            <span>Paulo Tanaka (Geral)</span>
                                         </button>
-                                    ))}
+                                        {lawyers.map((l) => (
+                                            <button
+                                                key={l.id}
+                                                type="button"
+                                                onClick={() => toggleCallerLawyer(l.id)}
+                                                className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border text-left text-[11px] ${callerLawyerIds.includes(l.id) ? "bg-violet-500/10 border-violet-500/40" : "bg-secondary/50 border-border"}`}
+                                            >
+                                                <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${callerLawyerIds.includes(l.id) ? "bg-violet-500" : "border-muted-foreground/30"}`}>
+                                                    {callerLawyerIds.includes(l.id) && <Check className="w-2.5 h-2.5 text-white" />}
+                                                </div>
+                                                <span className="truncate">{l.name}</span>
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
 
                             <Button
                                 onClick={handleAddCaller}
-                                disabled={savingCaller || !callerName.trim() || callerPin.length !== 6 || callerLawyerIds.length === 0}
-                                className="bg-violet-600 text-white hover:bg-violet-700 font-semibold"
+                                disabled={savingCaller || !callerName.trim() || !callerUsername.trim() || !callerPassword.trim() || callerLawyerIds.length === 0}
+                                className="bg-violet-600 text-white hover:bg-violet-700 font-semibold w-full sm:w-auto"
                             >
                                 {savingCaller ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
                                 Cadastrar Teclador
@@ -801,65 +788,32 @@ export default function Settings() {
                                     <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                                 </div>
                             ) : callers.length === 0 ? (
-                                <p className="text-sm text-muted-foreground text-center py-6">
-                                    Nenhum teclador cadastrado. Crie um acima para dar acesso de leitura.
-                                </p>
+                                <p className="text-sm text-muted-foreground text-center py-6">Nenhum teclador cadastrado.</p>
                             ) : (
                                 <div className="space-y-3">
                                     {callers.map((caller) => (
-                                        <div
-                                            key={caller.id}
-                                            className={`border rounded-lg px-4 py-3 group transition-all ${caller.active
-                                                ? "bg-violet-500/5 border-violet-500/20 hover:border-violet-500/40"
-                                                : "bg-muted/20 border-border opacity-60"
-                                                }`}
-                                        >
-                                            <div className="flex items-center justify-between mb-2">
+                                        <div key={caller.id} className={`border rounded-xl px-4 py-3 group transition-all ${caller.active ? "bg-violet-500/5 border-violet-500/20" : "bg-muted/20 border-border opacity-70"}`}>
+                                            <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-3">
-                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${caller.active ? "bg-violet-500 text-white" : "bg-muted text-muted-foreground"
-                                                        }`}>
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${caller.active ? "bg-violet-500 text-white" : "bg-muted text-muted-foreground"}`}>
                                                         {caller.name[0]?.toUpperCase()}
                                                     </div>
                                                     <div>
                                                         <p className="text-sm font-medium">{caller.name}</p>
-                                                        <p className="text-[10px] text-muted-foreground font-mono tracking-wider">
-                                                            PIN: {caller.pin}
-                                                        </p>
+                                                        <p className="text-[10px] text-muted-foreground">Usuário: <span className="font-bold text-violet-300">{caller.username}</span></p>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <button
-                                                        onClick={() => handleToggleCallerActive(caller)}
-                                                        className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border transition-colors ${caller.active
-                                                            ? "bg-success/10 text-success border-success/20 hover:bg-success/20"
-                                                            : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/50"
-                                                            }`}
-                                                    >
+                                                    <button onClick={() => handleToggleCallerActive(caller)} className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${caller.active ? "bg-green-500/10 text-green-500 border-green-500/20" : "bg-muted/30 text-muted-foreground border-border"}`}>
                                                         {caller.active ? "Ativo" : "Inativo"}
                                                     </button>
-                                                    <Button
-                                                        variant="ghost" size="icon"
-                                                        className="h-8 w-8 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary transition-all"
-                                                        onClick={() => handleOpenEditCaller(caller)}
-                                                    >
-                                                        <Pencil className="w-4 h-4" />
-                                                    </Button>
-                                                    <Button
-                                                        variant="ghost" size="icon"
-                                                        className="h-8 w-8 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
-                                                        onClick={() => handleDeleteCaller(caller.id)}
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </Button>
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100" onClick={() => handleOpenEditCaller(caller)}><Pencil className="w-3 h-3" /></Button>
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 hover:text-destructive" onClick={() => handleDeleteCaller(caller.id)}><Trash2 className="w-3 h-3" /></Button>
                                                 </div>
                                             </div>
-
-                                            {/* Assigned lawyers */}
-                                            <div className="flex flex-wrap gap-1.5 ml-11">
+                                            <div className="flex flex-wrap gap-1.5 ml-11 mt-1">
                                                 {caller.lawyer_ids.map((lid) => (
-                                                    <span key={lid} className="text-[10px] bg-violet-500/10 text-violet-300 px-2 py-0.5 rounded-full border border-violet-500/20">
-                                                        {getLawyerName(lid)}
-                                                    </span>
+                                                    <span key={lid} className="text-[9px] bg-violet-500/10 text-violet-300 px-1.5 py-0.5 rounded border border-violet-500/20">{getLawyerName(lid)}</span>
                                                 ))}
                                             </div>
                                         </div>
@@ -869,285 +823,318 @@ export default function Settings() {
                         </div>
                     </div>
                 )}
-            </div>
 
-            {/* Edit Caller Dialog */}
-            <Dialog open={!!editingCaller} onOpenChange={(open) => !open && setEditingCaller(null)}>
-                <DialogContent className="max-w-md bg-card border-border shadow-2xl">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <Pencil className="w-5 h-5 text-violet-400" /> Editar Teclador
-                        </DialogTitle>
-                        <DialogDescription>
-                            Atualize os dados e as permissões de acesso deste teclador.
-                        </DialogDescription>
-                    </DialogHeader>
+                {/* Edit Caller Dialog */}
+                <Dialog open={!!editingCaller} onOpenChange={(open) => !open && setEditingCaller(null)}>
+                    <DialogContent className="max-w-md bg-card border-border shadow-2xl">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <Pencil className="w-5 h-5 text-violet-400" /> Editar Teclador
+                            </DialogTitle>
+                            <DialogDescription>
+                                Atualize os dados e as permissões de acesso deste teclador.
+                            </DialogDescription>
+                        </DialogHeader>
 
-                    <div className="space-y-6 py-4">
-                        <div className="grid grid-cols-1 gap-4">
-                            <div className="space-y-2">
-                                <Label className="text-xs text-muted-foreground">Nome completo</Label>
-                                <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="bg-secondary border-border" />
-                            </div>
-                            <div className="space-y-2">
-                                <Label className="text-xs text-muted-foreground">PIN de Acesso (6 dígitos)</Label>
-                                <Input
-                                    value={editPin}
-                                    onChange={(e) => setEditPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                                    className="bg-secondary border-border font-mono tracking-[0.3em] text-center"
-                                    maxLength={6}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                                <Label className="text-xs text-muted-foreground">Advogados permitidos</Label>
-                                <div className="flex gap-2 text-[10px] font-medium">
-                                    <button onClick={() => selectAllLawyers(true)} className="text-primary hover:underline">Selecionar Todos</button>
-                                    <button onClick={() => deselectAllLawyers(true)} className="text-muted-foreground hover:underline">Limpar</button>
+                        <div className="space-y-6 py-4">
+                            <div className="grid grid-cols-1 gap-4">
+                                <div className="space-y-2">
+                                    <Label className="text-xs text-muted-foreground">Nome completo</Label>
+                                    <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="bg-secondary border-border" />
                                 </div>
-                            </div>
-                            <div className="grid grid-cols-1 gap-2 max-h-[30vh] overflow-y-auto pr-2 custom-scrollbar">
-                                <button
-                                    onClick={() => toggleCallerLawyer("geral", true)}
-                                    className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-left text-sm transition-all ${editLawyerIds.includes("geral") ? "bg-primary/10 border-primary/40" : "bg-secondary/30 border-border"}`}
-                                >
-                                    <div className={`w-4 h-4 rounded flex items-center justify-center ${editLawyerIds.includes("geral") ? "bg-primary" : "border border-muted-foreground/30"}`}>
-                                        {editLawyerIds.includes("geral") && <Check className="w-3 h-3 text-primary-foreground" />}
-                                    </div>
-                                    <span className="text-xs">Paulo Tanaka (Geral)</span>
-                                </button>
-                                {lawyers.map((l) => (
-                                    <button
-                                        key={l.id}
-                                        onClick={() => toggleCallerLawyer(l.id, true)}
-                                        className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-left text-sm transition-all ${editLawyerIds.includes(l.id) ? "bg-violet-500/10 border-violet-500/40" : "bg-secondary/30 border-border"}`}
-                                    >
-                                        <div className={`w-4 h-4 rounded flex items-center justify-center ${editLawyerIds.includes(l.id) ? "bg-violet-500" : "border border-muted-foreground/30"}`}>
-                                            {editLawyerIds.includes(l.id) && <Check className="w-3 h-3 text-white" />}
-                                        </div>
-                                        <span className="text-xs">{l.name}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setEditingCaller(null)} className="border-border">Cancelar</Button>
-                        <Button onClick={handleUpdateCaller} disabled={updatingCaller} className="bg-violet-600 hover:bg-violet-700 text-white">
-                            {updatingCaller ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                            Salvar Alterações
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-            {/* Nuclear Delete Confirmation Dialog */}
-            <Dialog open={!!deletingLawyerId} onOpenChange={(open) => !open && !isDeletingNuclear && setDeletingLawyerId(null)}>
-                <DialogContent className="max-w-md bg-card border-destructive/20 shadow-2xl">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-destructive">
-                            <AlertTriangle className="w-5 h-5" /> EXCLUSÃO TOTAL (NUCLEAR)
-                        </DialogTitle>
-                        <DialogDescription className="text-foreground font-medium pt-2">
-                            Você está prestes a apagar o advogado "{lawyers.find(l => l.id === deletingLawyerId)?.name}".
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 space-y-3">
-                        <p className="text-xs text-destructive-foreground font-bold uppercase tracking-wider">Atenção! Esta ação apagará:</p>
-                        <ul className="text-[11px] space-y-1 text-destructive-foreground/80 list-disc pl-4">
-                            <li>O cadastro do advogado permanentemente.</li>
-                            <li>**TODOS** os casos vinculados a este advogado.</li>
-                            <li>**TODOS** os clientes vinculados a esses casos.</li>
-                            <li>**TODOS** os documentos e conversas desses casos.</li>
-                            <li>Removerá o acesso de todos os tecladores a este advogado.</li>
-                        </ul>
-                    </div>
-
-                    <DialogFooter className="mt-4">
-                        <Button variant="outline" onClick={() => setDeletingLawyerId(null)} disabled={isDeletingNuclear}>
-                            Cancelar
-                        </Button>
-                        <Button
-                            variant="destructive"
-                            onClick={handleDeleteLawyer}
-                            disabled={isDeletingNuclear}
-                            className="bg-destructive hover:bg-destructive/90 text-white font-bold"
-                        >
-                            {isDeletingNuclear ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
-                            APAGAR TUDO (NUCLEAR)
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-            {/* ===== TAB: SISTEMA ===== */}
-            {activeTab === "sistema" && (
-                <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
-                    <div className="bg-card border border-border rounded-xl p-8 shadow-card space-y-6">
-                        <div className="flex items-center gap-3 border-b border-border pb-4">
-                            <div className="p-2 bg-blue-500/10 rounded-lg">
-                                <Database className="w-5 h-5 text-blue-400" />
-                            </div>
-                            <div>
-                                <h3 className="text-lg font-bold">Manutenção do Sistema</h3>
-                                <p className="text-xs text-muted-foreground">Ferramentas de integridade e limpeza de dados.</p>
-                            </div>
-                        </div>
-
-                        <div className="bg-secondary/20 border border-border/50 rounded-xl p-6 flex flex-col sm:flex-row items-center justify-between gap-6 hover:bg-secondary/30 transition-colors">
-                            <div className="space-y-2 flex-1">
-                                <h4 className="text-sm font-bold flex items-center gap-2">
-                                    <Phone className="w-4 h-4 text-[#25D366]" /> Limpeza de Telefones (WhatsApp)
-                                </h4>
-                                <p className="text-xs text-muted-foreground leading-relaxed">
-                                    Processa todos os clientes para manter apenas dígitos nos telefones.
-                                    Isso corrige botões de WhatsApp que não abrem e remove caracteres como `()`, `-` e espaços.
-                                </p>
-                            </div>
-                            <Button
-                                onClick={handleDatabaseCleanup}
-                                disabled={cleaning}
-                                className="bg-blue-600 hover:bg-blue-700 text-white min-w-[180px] h-11 font-bold shadow-lg shadow-blue-900/20"
-                            >
-                                {cleaning ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                                        Processando...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Sparkles className="w-4 h-4 mr-2" />
-                                        Limpar Banco
-                                    </>
-                                )}
-                            </Button>
-                        </div>
-
-                        {cleaning && (
-                            <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
-                                <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                                    <span>Progresso da Limpeza</span>
-                                    <span>{Math.round((cleanStats.updated / (cleanStats.total || 1)) * 100)}%</span>
+                                <div className="space-y-2">
+                                    <Label className="text-xs text-muted-foreground">Usuário</Label>
+                                    <Input value={editUsername} onChange={(e) => setEditUsername(e.target.value)} className="bg-secondary border-border" />
                                 </div>
-                                <div className="h-2 w-full bg-secondary rounded-full overflow-hidden border border-border">
-                                    <div
-                                        className="h-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all duration-500 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]"
-                                        style={{ width: `${(cleanStats.updated / (cleanStats.total || 1)) * 100}%` }}
+                                <div className="space-y-2">
+                                    <Label className="text-xs text-muted-foreground">Senha</Label>
+                                    <Input
+                                        type="text"
+                                        value={editPassword}
+                                        onChange={(e) => setEditPassword(e.target.value)}
+                                        className="bg-secondary border-border"
                                     />
                                 </div>
-                                <p className="text-[10px] text-center text-muted-foreground font-medium">
-                                    {cleanStats.updated} clientes atualizados de {cleanStats.total} totalizados no sistema.
-                                </p>
                             </div>
-                        )}
-                    </div>
-                </div>
-            )}
 
-            {/* ===== TAB: WHATSAPP ===== */}
-            {activeTab === "whatsapp" && (
-                <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
-                    <div className="bg-card border border-border rounded-xl p-8 shadow-card space-y-6">
-                        <div className="flex items-center gap-3 border-b border-border pb-4">
-                            <div className="p-2 bg-green-500/10 rounded-lg">
-                                <ScanFace className="w-5 h-5 text-green-400" />
-                            </div>
-                            <div>
-                                <h3 className="text-lg font-bold">WhatsApp Bridge (Conexão Local)</h3>
-                                <p className="text-xs text-muted-foreground">Conecte o Nexus ao seu WhatsApp real via Baileys.</p>
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <Label className="text-xs text-muted-foreground">Advogados permitidos</Label>
+                                    <div className="flex gap-2 text-[10px] font-medium">
+                                        <button onClick={() => selectAllLawyers(true)} className="text-primary hover:underline">Selecionar Todos</button>
+                                        <button onClick={() => deselectAllLawyers(true)} className="text-muted-foreground hover:underline">Limpar</button>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 gap-2 max-h-[30vh] overflow-y-auto pr-2 custom-scrollbar">
+                                    <button
+                                        onClick={() => toggleCallerLawyer("geral", true)}
+                                        className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-left text-sm transition-all ${editLawyerIds.includes("geral") ? "bg-primary/10 border-primary/40" : "bg-secondary/30 border-border"}`}
+                                    >
+                                        <div className={`w-4 h-4 rounded flex items-center justify-center ${editLawyerIds.includes("geral") ? "bg-primary" : "border border-muted-foreground/30"}`}>
+                                            {editLawyerIds.includes("geral") && <Check className="w-3 h-3 text-primary-foreground" />}
+                                        </div>
+                                        <span className="text-xs">Paulo Tanaka (Geral)</span>
+                                    </button>
+                                    {lawyers.map((l) => (
+                                        <button
+                                            key={l.id}
+                                            onClick={() => toggleCallerLawyer(l.id, true)}
+                                            className={`flex items-center gap-3 px-3 py-2 rounded-lg border text-left text-sm transition-all ${editLawyerIds.includes(l.id) ? "bg-violet-500/10 border-violet-500/40" : "bg-secondary/30 border-border"}`}
+                                        >
+                                            <div className={`w-4 h-4 rounded flex items-center justify-center ${editLawyerIds.includes(l.id) ? "bg-violet-500" : "border border-muted-foreground/30"}`}>
+                                                {editLawyerIds.includes(l.id) && <Check className="w-3 h-3 text-white" />}
+                                            </div>
+                                            <span className="text-xs">{l.name}</span>
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         </div>
 
-                        <div className="space-y-4">
-                            <div className="space-y-2">
-                                <Label className="text-[10px] text-muted-foreground uppercase font-bold">Endereço do Servidor Bridge</Label>
-                                <div className="flex gap-2">
-                                    <div className="relative flex-1">
-                                        <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                                        <Input
-                                            value={waBridgeUrl}
-                                            onChange={(e) => setWaBridgeUrl(e.target.value)}
-                                            onBlur={(e) => saveWaBridge(e.target.value)}
-                                            placeholder="http://localhost:3000"
-                                            className="bg-secondary border-border pl-8 text-xs font-mono"
-                                        />
-                                    </div>
-                                    <Button onClick={testWaConnection} disabled={testingWa} variant="outline" className="border-green-500/30 text-green-400 hover:bg-green-500/10 h-10 px-6">
-                                        {testingWa ? <Loader2 className="w-4 h-4 animate-spin text-green-500" /> : "Testar Conexão"}
-                                    </Button>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setEditingCaller(null)} className="border-border">Cancelar</Button>
+                            <Button onClick={handleUpdateCaller} disabled={updatingCaller} className="bg-violet-600 hover:bg-violet-700 text-white">
+                                {updatingCaller ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                                Salvar Alterações
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+                {/* Nuclear Delete Confirmation Dialog */}
+                <Dialog open={!!deletingLawyerId} onOpenChange={(open) => !open && !isDeletingNuclear && setDeletingLawyerId(null)}>
+                    <DialogContent className="max-w-md bg-card border-destructive/20 shadow-2xl">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2 text-destructive">
+                                <AlertTriangle className="w-5 h-5" /> EXCLUSÃO TOTAL (NUCLEAR)
+                            </DialogTitle>
+                            <DialogDescription className="text-foreground font-medium pt-2">
+                                Você está prestes a apagar o advogado "{lawyers.find(l => l.id === deletingLawyerId)?.name}".
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 space-y-3">
+                            <p className="text-xs text-destructive-foreground font-bold uppercase tracking-wider">Atenção! Esta ação apagará:</p>
+                            <ul className="text-[11px] space-y-1 text-destructive-foreground/80 list-disc pl-4">
+                                <li>O cadastro do advogado permanentemente.</li>
+                                <li>**TODOS** os casos vinculados a este advogado.</li>
+                                <li>**TODOS** os clientes vinculados a esses casos.</li>
+                                <li>**TODOS** os documentos e conversas desses casos.</li>
+                                <li>Removerá o acesso de todos os tecladores a este advogado.</li>
+                            </ul>
+                        </div>
+
+                        <DialogFooter className="mt-4">
+                            <Button variant="outline" onClick={() => setDeletingLawyerId(null)} disabled={isDeletingNuclear}>
+                                Cancelar
+                            </Button>
+                            <Button
+                                variant="destructive"
+                                onClick={handleDeleteLawyer}
+                                disabled={isDeletingNuclear}
+                                className="bg-destructive hover:bg-destructive/90 text-white font-bold"
+                            >
+                                {isDeletingNuclear ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                                APAGAR TUDO (NUCLEAR)
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+                {/* ===== TAB: SISTEMA ===== */}
+                {activeTab === "sistema" && (
+                    <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
+                        <div className="bg-card border border-border rounded-xl p-8 shadow-card space-y-6">
+                            <div className="flex items-center gap-3 border-b border-border pb-4">
+                                <div className="p-2 bg-blue-500/10 rounded-lg">
+                                    <Database className="w-5 h-5 text-blue-400" />
                                 </div>
-                                <p className="text-[10px] text-muted-foreground italic">Dica: Use `http://localhost:3000` se estiver rodando o bridge no mesmo computador.</p>
+                                <div>
+                                    <h3 className="text-lg font-bold">Manutenção do Sistema</h3>
+                                    <p className="text-xs text-muted-foreground">Ferramentas de integridade e limpeza de dados.</p>
+                                </div>
                             </div>
 
-                            <div className={`flex items-center gap-4 p-5 rounded-2xl border transition-all duration-300 ${waStatus === 'connected' ? 'bg-green-500/5 border-green-500/20' : 'bg-muted/10 border-border'}`}>
-                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${waStatus === 'connected' ? 'bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'bg-secondary text-muted-foreground'}`}>
-                                    <QrCode className="w-6 h-6" />
-                                </div>
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-2">
-                                        <p className="text-sm font-bold tracking-tight">{waStatus === 'connected' ? 'Conexão Estabelecida' : waStatus === 'checking' ? 'Verificando...' : 'Desconectado'}</p>
-                                        {waStatus === 'connected' && <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                        {waStatus === 'connected' ? 'O Nexus está pronto para verificar números em tempo real.' : 'O Bridge não foi detectado ou o WhatsApp não foi autenticado.'}
+                            <div className="bg-secondary/20 border border-border/50 rounded-xl p-6 flex flex-col sm:flex-row items-center justify-between gap-6 hover:bg-secondary/30 transition-colors">
+                                <div className="space-y-2 flex-1">
+                                    <h4 className="text-sm font-bold flex items-center gap-2">
+                                        <Phone className="w-4 h-4 text-[#25D366]" /> Limpeza de Telefones (WhatsApp)
+                                    </h4>
+                                    <p className="text-xs text-muted-foreground leading-relaxed">
+                                        Processa todos os clientes para manter apenas dígitos nos telefones.
+                                        Isso corrige botões de WhatsApp que não abrem e remove caracteres como `()`, `-` e espaços.
                                     </p>
                                 </div>
-                                {waStatus === 'connected' && (
-                                    <div className="hidden sm:block text-[9px] font-black bg-green-500/20 text-green-400 px-3 py-1.5 rounded-full uppercase tracking-tighter">
-                                        Active Bridge v1.0
+                                <Button
+                                    onClick={handleDatabaseCleanup}
+                                    disabled={cleaning}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white min-w-[180px] h-11 font-bold shadow-lg shadow-blue-900/20"
+                                >
+                                    {cleaning ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                            Processando...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sparkles className="w-4 h-4 mr-2" />
+                                            Limpar Banco
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
+
+                            {cleaning && (
+                                <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                                        <span>Progresso da Limpeza</span>
+                                        <span>{Math.round((cleanStats.updated / (cleanStats.total || 1)) * 100)}%</span>
+                                    </div>
+                                    <div className="h-2 w-full bg-secondary rounded-full overflow-hidden border border-border">
+                                        <div
+                                            className="h-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all duration-500 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                                            style={{ width: `${(cleanStats.updated / (cleanStats.total || 1)) * 100}%` }}
+                                        />
+                                    </div>
+                                    <p className="text-[10px] text-center text-muted-foreground font-medium">
+                                        {cleanStats.updated} clientes atualizados de {cleanStats.total} totalizados no sistema.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* ===== TAB: WHATSAPP ===== */}
+                {activeTab === "whatsapp" && (
+                    <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
+                        <div className="bg-card border border-border rounded-xl p-8 shadow-card space-y-6">
+                            <div className="flex items-center gap-3 border-b border-border pb-4">
+                                <div className="p-2 bg-green-500/10 rounded-lg">
+                                    <ScanFace className="w-5 h-5 text-green-400" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold">WhatsApp Bridge (Conexão Local)</h3>
+                                    <p className="text-xs text-muted-foreground">Conecte o Nexus ao seu WhatsApp real via Baileys.</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">Endereço do Servidor Bridge</Label>
+                                    <div className="flex gap-2">
+                                        <div className="relative flex-1">
+                                            <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                                            <Input
+                                                value={waBridgeUrl}
+                                                onChange={(e) => setWaBridgeUrl(e.target.value)}
+                                                onBlur={(e) => saveWaBridge(e.target.value)}
+                                                placeholder="http://localhost:3000"
+                                                className="bg-secondary border-border pl-8 text-xs font-mono"
+                                            />
+                                        </div>
+                                        <Button onClick={() => testWaConnection()} disabled={testingWa} variant="outline" className="border-green-500/30 text-green-400 hover:bg-green-500/10 h-10 px-6">
+                                            {testingWa ? <Loader2 className="w-4 h-4 animate-spin text-green-500" /> : "Testar Conexão"}
+                                        </Button>
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground italic">Dica: Use `http://localhost:3000` se estiver rodando o bridge no mesmo computador.</p>
+                                </div>
+
+                                <div className={`flex items-center gap-4 p-5 rounded-2xl border transition-all duration-300 ${waStatus === 'connected' ? 'bg-green-500/5 border-green-500/20' : 'bg-muted/10 border-border'}`}>
+                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${waStatus === 'connected' ? 'bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'bg-secondary text-muted-foreground'}`}>
+                                        <QrCode className="w-6 h-6" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-sm font-bold tracking-tight">{waStatus === 'connected' ? 'Conexão Estabelecida' : waQrCode ? 'Aguardando Escaneamento' : waStatus === 'checking' ? 'Verificando...' : 'Desconectado'}</p>
+                                            {waStatus === 'connected' && <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">
+                                            {waStatus === 'connected'
+                                                ? 'O Nexus está pronto para verificar números em tempo real.'
+                                                : waQrCode
+                                                    ? 'Use o WhatsApp do seu celular para escanear o código abaixo.'
+                                                    : 'O Bridge não foi detectado ou o WhatsApp não foi autenticado.'}
+                                        </p>
+                                    </div>
+                                    {waStatus === 'connected' && (
+                                        <div className="hidden sm:block text-[9px] font-black bg-green-500/20 text-green-400 px-3 py-1.5 rounded-full uppercase tracking-tighter">
+                                            Active Bridge v1.0
+                                        </div>
+                                    )}
+                                </div>
+
+                                {waQrCode && waStatus !== 'connected' && (
+                                    <div className="flex flex-col items-center justify-center p-8 bg-white rounded-3xl border shadow-2xl animate-in zoom-in-95 duration-300">
+                                        <h4 className="text-black text-sm font-bold mb-4 flex items-center gap-2">
+                                            <ScanFace className="w-4 h-4" /> Escaneie para Conectar
+                                        </h4>
+                                        <div className="p-4 bg-white rounded-xl border-4 border-slate-100">
+                                            {/* Using an external QR generator for simplicity and visual quality */}
+                                            <img
+                                                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(waQrCode)}`}
+                                                alt="WhatsApp QR Code"
+                                                className="w-48 h-48"
+                                                onLoad={() => setTestingWa(false)}
+                                            />
+                                        </div>
+                                        <div className="mt-6 flex flex-col items-center gap-2">
+                                            <div className="flex gap-1">
+                                                {[1, 2, 3].map(i => (
+                                                    <div key={i} className="w-1.5 h-1.5 rounded-full bg-green-500 animate-bounce" style={{ animationDelay: `${i * 0.2}s` }} />
+                                                ))}
+                                            </div>
+                                            <p className="text-[10px] text-slate-500 font-medium">Aguardando confirmação do celular...</p>
+                                        </div>
                                     </div>
                                 )}
                             </div>
-                        </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="bg-muted/20 border border-border/50 rounded-2xl p-5 space-y-3">
-                                <h4 className="text-xs font-bold flex items-center gap-2">
-                                    <CheckSquare className="w-3.5 h-3.5 text-blue-400" /> Verificação Automática
-                                </h4>
-                                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                                    Ao importar ZIPs ou Pastas, o Nexus usará o Bridge para garantir que o lead realmente tenha WhatsApp antes de salvá-lo.
-                                </p>
-                                <div className="flex items-center gap-2 pt-2">
-                                    <div className="w-2 h-2 rounded-full bg-blue-500" />
-                                    <span className="text-[10px] font-medium">Filtro de Importação Ativo</span>
-                                    <span className="ml-auto text-[9px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">AUTO</span>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="bg-muted/20 border border-border/50 rounded-2xl p-5 space-y-3">
+                                    <h4 className="text-xs font-bold flex items-center gap-2">
+                                        <CheckSquare className="w-3.5 h-3.5 text-blue-400" /> Verificação Automática
+                                    </h4>
+                                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                        Ao importar ZIPs ou Pastas, o Nexus usará o Bridge para garantir que o lead realmente tenha WhatsApp antes de salvá-lo.
+                                    </p>
+                                    <div className="flex items-center gap-2 pt-2">
+                                        <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                        <span className="text-[10px] font-medium">Filtro de Importação Ativo</span>
+                                        <span className="ml-auto text-[9px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">AUTO</span>
+                                    </div>
+                                </div>
+
+                                <div className="bg-orange-500/5 border border-orange-500/20 rounded-2xl p-5 space-y-3">
+                                    <h4 className="text-xs font-bold flex items-center gap-2 text-orange-400">
+                                        <Database className="w-3.5 h-3.5" /> Limpeza de Base Existente
+                                    </h4>
+                                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                        Verifica e remove números que não possuem conta no WhatsApp de todos os clientes já cadastrados.
+                                    </p>
+                                    <Button
+                                        onClick={handleWhatsAppCleanup}
+                                        disabled={cleaning || waStatus !== 'connected'}
+                                        className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold h-9 text-xs mt-1"
+                                    >
+                                        {cleaning ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                        ) : "Iniciar Verificação Real"}
+                                    </Button>
                                 </div>
                             </div>
 
-                            <div className="bg-orange-500/5 border border-orange-500/20 rounded-2xl p-5 space-y-3">
-                                <h4 className="text-xs font-bold flex items-center gap-2 text-orange-400">
-                                    <Database className="w-3.5 h-3.5" /> Limpeza de Base Existente
-                                </h4>
-                                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                                    Verifica e remove números que não possuem conta no WhatsApp de todos os clientes já cadastrados.
-                                </p>
-                                <Button
-                                    onClick={handleWhatsAppCleanup}
-                                    disabled={cleaning || waStatus !== 'connected'}
-                                    className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold h-9 text-xs mt-1"
-                                >
-                                    {cleaning ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                    ) : "Iniciar Verificação Real"}
-                                </Button>
-                            </div>
-                        </div>
-
-                        <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl flex gap-3">
-                            <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
-                            <div className="space-y-1">
-                                <p className="text-xs font-bold text-amber-500">Node.js Necessário</p>
-                                <p className="text-[10px] text-amber-200/60 leading-normal">
-                                    Você precisa rodar o script local que utiliza <strong>Baileys</strong>. O Nexus enviará os números para esse script, que retornará apenas os que são válidos. Isso evita que você tente falar com números fixos ou inválidos.
-                                </p>
+                            <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl flex gap-3">
+                                <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                                <div className="space-y-1">
+                                    <p className="text-xs font-bold text-amber-500">Node.js Necessário</p>
+                                    <p className="text-[10px] text-amber-200/60 leading-normal">
+                                        Você precisa rodar o script local que utiliza <strong>Baileys</strong>. O Nexus enviará os números para esse script, que retornará apenas os que são válidos. Isso evita que você tente falar com números fixos ou inválidos.
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
         </Layout>
     );
 }
