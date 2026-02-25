@@ -132,7 +132,12 @@ export default function Settings() {
                 // For now, delete from DB
                 await supabase.from("documents").delete().in("case_id", caseIds);
 
-                // 3. Delete conversations
+                // 3. Delete messages and conversations
+                const { data: convs } = await supabase.from("conversations").select("id").in("case_id", caseIds);
+                const convIds = convs?.map(c => c.id) || [];
+                if (convIds.length > 0) {
+                    await supabase.from("messages").delete().in("conversation_id", convIds);
+                }
                 await supabase.from("conversations").delete().in("case_id", caseIds);
 
                 // 4. Delete cases
