@@ -7,9 +7,9 @@ export function cn(...inputs: ClassValue[]) {
 export function formatPhone(value: string | null | undefined): string {
   if (!value) return "";
 
-  // Se houver vírgulas, trata como uma lista de telefones
-  if (value.includes(",")) {
-    return value.split(",")
+  // Se houver vírgulas ou múltiplos espaços, trata como lista
+  if (value.includes(",") || value.includes("  ")) {
+    return value.split(/,|\s{2,}/)
       .map(p => formatPhone(p.trim()))
       .filter(Boolean)
       .join(", ");
@@ -17,6 +17,27 @@ export function formatPhone(value: string | null | undefined): string {
 
   const digits = value.replace(/\D/g, "");
   if (!digits) return "";
+
+  // Se a string for muito longa (mais que 11 dígitos), pode ser vários números grudados
+  if (digits.length > 11) {
+    const results: string[] = [];
+    let current = digits;
+
+    while (current.length >= 10) {
+      // Tenta pegar 11 dígitos (celular) ou 10 (fixo)
+      // Se começar com o dígito 9 na posição 3 (ex: 119...), provavelmente tem 11
+      const isMobile = current.length >= 11 && current[2] === "9";
+      const size = isMobile ? 11 : 10;
+
+      const part = current.substring(0, size);
+      results.push(formatPhone(part));
+      current = current.substring(size);
+    }
+
+    // Se sobrar algo pequeno, anexa ao último ou ignora? 
+    // Melhor retornar o que conseguimos organizar.
+    return results.join(", ");
+  }
 
   // Format based on length (standard Brazilian formats)
   if (digits.length <= 10) {

@@ -38,9 +38,25 @@ export default function Settings() {
             let updatedCount = 0;
 
             for (const client of clients) {
-                const cleanPhone = (p: string) => (p || "").replace(/\D/g, "");
-                const p1 = cleanPhone(client.phone || "");
-                const p2 = cleanPhone(client.phone_contract || "");
+                const smartClean = (val: string) => {
+                    if (!val) return "";
+                    // Pega apenas dígitos e organiza em blocos de 10 ou 11
+                    const digits = val.replace(/\D/g, "");
+                    if (digits.length <= 11) return digits;
+
+                    const normalized: string[] = [];
+                    let remaining = digits;
+                    while (remaining.length >= 10) {
+                        const isMobile = remaining.length >= 11 && remaining[2] === "9";
+                        const size = isMobile ? 11 : 10;
+                        normalized.push(remaining.substring(0, size));
+                        remaining = remaining.substring(size);
+                    }
+                    return normalized.join(" "); // Separa por espaço para não virar um blocão
+                };
+
+                const p1 = smartClean(client.phone || "");
+                const p2 = smartClean(client.phone_contract || "");
 
                 if (p1 !== client.phone || p2 !== client.phone_contract) {
                     await supabase.from("clients").update({
