@@ -45,8 +45,10 @@ async function callGemini(systemPrompt: string, userParts: GeminiPart[]): Promis
     let lastErrorDetails = "";
     const MAX_RETRIES = 3;
 
-    // Rotativo: Try each API Key
-    for (const key of apiKeys) {
+    // Rotativo: Try each API Key starting from a random index for better distribution
+    const startIndex = Math.floor(Math.random() * apiKeys.length);
+    for (let i = 0; i < apiKeys.length; i++) {
+        const key = apiKeys[(startIndex + i) % apiKeys.length];
         const url = `${BASE_URL}/${MODELS[0]}:generateContent?key=${key}`;
 
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {

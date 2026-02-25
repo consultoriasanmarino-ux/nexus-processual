@@ -584,8 +584,10 @@ export default function NewCase() {
 
     const zip = await JSZip.loadAsync(zipFile);
     let completedCount = 0;
+    const CONCURRENCY = 4; // Process 4 folders at a time
+    const foldersToProcess = [...zipFolders];
 
-    for (const folderName of zipFolders) {
+    const processFolder = async (folderName: string) => {
       setZipStatus(prev => ({
         ...prev,
         [folderName]: { status: 'processing' }
@@ -641,7 +643,6 @@ export default function NewCase() {
         // Extract client name from folder if AI didn't find it
         let clientNameFinal = ext.client_name || "";
         if (!clientNameFinal || clientNameFinal === "Desconhecido") {
-          // Try to extract name from folder: "001 - João da Silva" or "001 João da Silva"
           const folderMatch = folderName.match(/^\d+\s*[-–]?\s*(.+)$/);
           if (folderMatch) {
             clientNameFinal = folderMatch[1].trim();
@@ -688,7 +689,20 @@ export default function NewCase() {
 
       completedCount++;
       setZipProgress(Math.round((completedCount / zipFolders.length) * 100));
+    };
+
+    // Worker pool logic
+    const workers = [];
+    for (let i = 0; i < Math.min(CONCURRENCY, foldersToProcess.length); i++) {
+      workers.push((async () => {
+        while (foldersToProcess.length > 0) {
+          const folder = foldersToProcess.shift();
+          if (folder) await processFolder(folder);
+        }
+      })());
     }
+
+    await Promise.all(workers);
 
     setProcessingZip(false);
     const successCount = Object.values(zipStatus).filter(s => s.status === 'success').length + 1;
