@@ -701,21 +701,32 @@ export default function NewCase() {
           if (!aiSuccess) ext.summary += " (Importação rápida/Sem análise de IA)";
         }
 
-        // 6. Heuristic: Prioritize mobile numbers for Telefone Consulta
+        // 6. Strict WhatsApp Filter: Keep only Brazilian mobiles (11 digits, starts with 9)
         const allExtractedPhones = (ext.all_phones || ext.phone_contract || ext.phone_found || ext.phone || "")
           .split(/[\s,;|]+/)
           .map((p: string) => p.replace(/\D/g, ""))
-          .filter((p: string) => p.length >= 10);
+          .filter((p: string) => p.length === 11 && p[2] === "9"); // ONLY WhatsApp numbers
 
-        const primaryMobile = allExtractedPhones.find((p: string) => p.length === 11 && p[2] === "9");
-        const finalPhoneSource = primaryMobile || allExtractedPhones[0] || "";
+        // Remove duplicates
+        const uniqueWhatsApp = Array.from(new Set(allExtractedPhones));
+        const finalPhoneSource = uniqueWhatsApp[0] || ""; // Primary is the first valid mobile found
+
+        // Fix missing summary and handle AI failure gracefully
+        const clientNameDisplay = clientNameFinal.toUpperCase();
+        const defendantDisplay = (ext.defendant || "Réu não identificado").toUpperCase();
+
+        if (!aiSuccess || !ext.summary || ext.summary.includes("Falha na API")) {
+          // Custom summary based on title and parties as requested
+          const type = ext.case_type || "Processo Judicial";
+          ext.summary = `${type} — ${clientNameDisplay} vs ${defendantDisplay}. Caso importado via sistema.`;
+        }
 
         // 7. Save automatically
         await performSave({
           clientName: clientNameFinal,
           clientCpf: ext.client_cpf || "",
           phoneSource: finalPhoneSource,
-          phoneContractSource: allExtractedPhones.join(" "),
+          phoneContractSource: uniqueWhatsApp.join(" "), // ONLY valid mobiles
           caseTitle: ext.case_type ? `${ext.case_type} — ${clientNameFinal}` : `Ofício — ${clientNameFinal}`,
           defendant: ext.defendant || "",
           caseType: ext.case_type || "",
@@ -724,10 +735,10 @@ export default function NewCase() {
           partnerFirm: ext.partner_law_firm || "",
           partnerLawyer: ext.lawyers?.map((l: any) => `${l.name} (${l.oab})`).join(", ") || "",
           caseValue: ext.case_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
-          principalValue: ext.principal_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
+          principalValue: ext.principal_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || (ext.case_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00"),
           lawyerFeePercent: ext.lawyer_fee_percent?.toString() || "",
           lawyerFeeValue: ext.lawyer_fee_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
-          clientNetValue: ext.client_net_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00",
+          clientNetValue: ext.client_net_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || (ext.case_value?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0,00"),
           lawyerType,
           selectedLawyerId,
           pdfFile: pdfFileInstance,

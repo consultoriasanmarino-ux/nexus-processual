@@ -75,17 +75,18 @@ async function callGemini(systemPrompt: string, userParts: GeminiPart[]): Promis
                 lastErrorDetails = errMsg;
                 console.error(`❌ Gemini erro (${res.status}):`, errMsg);
 
+                // If key is reported as leaked or blocked, try next key immediately
+                if (errMsg.toLowerCase().includes("leaked") || errMsg.toLowerCase().includes("blocked") || res.status === 403 || res.status === 400) {
+                    console.warn(`⚠️ Chave comprometida ou inválida (${key.substring(0, 5)}...). Pulando para a próxima...`);
+                    break; // Next key
+                }
+
                 // 429 = Rate Limit: wait and retry with this same key
                 if (res.status === 429) {
                     const waitSeconds = Math.pow(2, attempt + 1) * 5; // 10s, 20s, 40s
                     console.warn(`⏳ Rate limit atingido. Aguardando ${waitSeconds}s antes de tentar novamente...`);
                     await sleep(waitSeconds * 1000);
                     continue; // Retry same key
-                }
-
-                // 403/400 = Key or permission issue, try next key
-                if (res.status === 403 || res.status === 400) {
-                    break; // Next key
                 }
 
                 // 404 = Model not found
@@ -486,12 +487,10 @@ Responda APENAS com JSON:
         return { success: true, extracted: merged };
     } catch (err: any) {
         // --- FALLBACK HEURISTIC (NO AI) ---
-        const allPhones = txtData.client_phones;
-        const mobile = allPhones.find(p => {
-            const digits = p.replace(/\D/g, "");
-            return digits.length === 11 && digits[2] === "9";
-        });
-        const bestPhone = mobile || allPhones[0] || "";
+        const allPhones = (txtData.client_phones || []).map(p => p.replace(/\D/g, ""));
+        // Keep ONLY mobile (WhatsApp-ready)
+        const whatsAppNumbers = allPhones.filter(p => p.length === 11 && p[2] === "9");
+        const bestPhone = whatsAppNumbers[0] || "";
 
         let fullDefendant = txtData.defendant;
         if (txtData.additional_defendants.length > 0) {
@@ -502,7 +501,7 @@ Responda APENAS com JSON:
         let detectedValue = 0;
         const textToSearch = (oficioText || "").substring(0, 15000);
         // Procura por "Valor da Causa: R$ 1.234,56" ou similar
-        const valueRegex = /(?:valor|causa|total|devido|dep[óo]sito|r\$|montante|r\s\$)\s*[:\-\s]*([0-9\.\,]+)/gi;
+        const valueRegex = /(?:valor|causa|total|devido|dep[óo]sito|r\$|montante|r\s\$|import[âa]ncia)\s*[:\-\s]*([0-9\.\,]+)/gi;
         let match;
         const candidates: number[] = [];
         while ((match = valueRegex.exec(textToSearch)) !== null) {
@@ -529,9 +528,9 @@ Responda APENAS com JSON:
             client_net_value: detectedValue,
             lawyers: [],
             partner_law_firm: "",
-            phone_contract: bestPhone,
-            all_phones: allPhones.join(", "),
-            summary: `IMPORTAÇÃO RÁPIDA: ${txtData.client_name} vs ${txtData.defendant}. (Análise IA falhou: ${err.message})`,
+            phone_contract: whatsAppNumbers.join(" "),
+            all_phones: whatsAppNumbers.join(" "),
+            summary: `${txtData.classe || "Ação Judicial"} — ${txtData.client_name.toUpperCase()} vs ${fullDefendant.toUpperCase()}. (Importação rápida/IA Indisponível)`,
             client_birth_date: txtData.client_birth_date,
             client_age: txtData.client_age,
             client_income: txtData.client_income,
