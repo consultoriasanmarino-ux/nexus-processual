@@ -5,7 +5,7 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Trash2, Save, Loader2, Scale, UserCheck, Headphones, ShieldCheck, Phone, Check, Key, Sparkles, Pencil, CheckSquare, Square, AlertTriangle, Settings as SettingsIcon, Database } from "lucide-react";
+import { Plus, Trash2, Save, Loader2, Scale, UserCheck, Headphones, ShieldCheck, Phone, Check, Key, Sparkles, Pencil, CheckSquare, Square, AlertTriangle, Settings as SettingsIcon, Database, MessageSquare, QrCode, Link as LinkIcon, ScanFace, Activity } from "lucide-react";
 import { toast } from "sonner";
 import type { Lawyer, Caller } from "@/lib/types";
 import {
@@ -17,15 +17,100 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 
-type SettingsTab = "advogados" | "tecladores" | "api_keys" | "sistema";
+type SettingsTab = "advogados" | "tecladores" | "api_keys" | "whatsapp" | "sistema";
 
 export default function Settings() {
     const { user } = useAuth();
     const [activeTab, setActiveTab] = useState<SettingsTab>("advogados");
+    const [waBridgeUrl, setWaBridgeUrl] = useState(() => localStorage.getItem("nexus_wa_bridge") || "");
+    const [testingWa, setTestingWa] = useState(false);
+    const [waStatus, setWaStatus] = useState<'connected' | 'disconnected' | 'checking'>('disconnected');
 
     // Database Cleaning state
     const [cleaning, setCleaning] = useState(false);
     const [cleanStats, setCleanStats] = useState({ total: 0, updated: 0 });
+
+    const saveWaBridge = (url: string) => {
+        setWaBridgeUrl(url);
+        localStorage.setItem("nexus_wa_bridge", url);
+        toast.success("Configuração do Bridge salva!");
+    };
+
+    const testWaConnection = async () => {
+        if (!waBridgeUrl) { toast.error("Informe a URL do Bridge."); return; }
+        setTestingWa(true);
+        setWaStatus('checking');
+        try {
+            const res = await fetch(`${waBridgeUrl}/status`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.active) {
+                    setWaStatus('connected');
+                    toast.success("WhatsApp Bridge conectado e ativo!");
+                } else {
+                    setWaStatus('disconnected');
+                    toast.error("Bridge online, mas WhatsApp não está autenticado.");
+                }
+            } else throw new Error();
+        } catch {
+            setWaStatus('disconnected');
+            toast.error("Não foi possível alcançar o Bridge. Verifique se o servidor local está rodando.");
+        } finally {
+            setTestingWa(false);
+        }
+    };
+
+    const handleWhatsAppCleanup = async () => {
+        if (!waBridgeUrl || waStatus !== 'connected') {
+            toast.error("Conecte o WhatsApp Bridge primeiro para verificar os números.");
+            return;
+        }
+        if (!confirm("Isso irá testar TODOS os seus clientes no WhatsApp real e REMOVER os números que não possuem conta. Deseja prosseguir?")) return;
+
+        setCleaning(true);
+        try {
+            const { data: clients, error } = await supabase.from("clients").select("id, full_name, phone, phone_contract, notes");
+            if (error || !clients) throw error;
+
+            setCleanStats({ total: clients.length, updated: 0 });
+            let updatedCount = 0;
+
+            for (const client of clients) {
+                const p1 = (client.phone || "").split(" ").filter(Boolean);
+                const p2 = (client.phone_contract || "").split(" ").filter(Boolean);
+                const all = Array.from(new Set([...p1, ...p2]));
+
+                if (all.length === 0) continue;
+
+                // Call Bridge to verify
+                const res = await fetch(`${waBridgeUrl}/verify`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ numbers: all })
+                });
+
+                if (!res.ok) continue;
+                const { validNumbers } = await res.json();
+
+                const newP1 = p1.filter(n => validNumbers.includes(n)).join(" ");
+                const newP2 = p2.filter(n => validNumbers.includes(n)).join(" ");
+
+                if (newP1 !== client.phone || newP2 !== client.phone_contract) {
+                    await supabase.from("clients").update({
+                        phone: newP1,
+                        phone_contract: newP2
+                    } as any).eq("id", client.id);
+                    updatedCount++;
+                    setCleanStats(prev => ({ ...prev, updated: updatedCount }));
+                }
+            }
+            toast.success(`Limpeza concluída! ${updatedCount} clientes tiveram números removidos por não terem WhatsApp.`);
+        } catch (err: any) {
+            toast.error("Erro na verificação: " + err.message);
+        } finally {
+            setCleaning(false);
+        }
+    };
 
     const handleDatabaseCleanup = async () => {
         if (!confirm("Isso irá formatar e limpar os números de telefone de TODOS os clientes para o formato WhatsApp. Continuar?")) return;
@@ -439,6 +524,17 @@ export default function Settings() {
                     >
                         <SettingsIcon className="w-3.5 h-3.5" />
                         Sistema
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("whatsapp")}
+                        className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-all duration-200 flex items-center gap-2 ${activeTab === "whatsapp"
+                            ? "bg-green-500/20 text-green-300 border-green-500/40 shadow-md"
+                            : "bg-muted/30 text-muted-foreground border-border hover:bg-muted/50"
+                            }`}
+                    >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        WhatsApp
+                        {waStatus === 'connected' && <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />}
                     </button>
                 </div>
 
@@ -946,6 +1042,109 @@ export default function Settings() {
                                 </p>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* ===== TAB: WHATSAPP ===== */}
+            {activeTab === "whatsapp" && (
+                <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
+                    <div className="bg-card border border-border rounded-xl p-8 shadow-card space-y-6">
+                        <div className="flex items-center gap-3 border-b border-border pb-4">
+                            <div className="p-2 bg-green-500/10 rounded-lg">
+                                <ScanFace className="w-5 h-5 text-green-400" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold">WhatsApp Bridge (Conexão Local)</h3>
+                                <p className="text-xs text-muted-foreground">Conecte o Nexus ao seu WhatsApp real via Baileys.</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <Label className="text-[10px] text-muted-foreground uppercase font-bold">Endereço do Servidor Bridge</Label>
+                                <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                                        <Input
+                                            value={waBridgeUrl}
+                                            onChange={(e) => setWaBridgeUrl(e.target.value)}
+                                            onBlur={(e) => saveWaBridge(e.target.value)}
+                                            placeholder="http://localhost:3000"
+                                            className="bg-secondary border-border pl-8 text-xs font-mono"
+                                        />
+                                    </div>
+                                    <Button onClick={testWaConnection} disabled={testingWa} variant="outline" className="border-green-500/30 text-green-400 hover:bg-green-500/10 h-10 px-6">
+                                        {testingWa ? <Loader2 className="w-4 h-4 animate-spin text-green-500" /> : "Testar Conexão"}
+                                    </Button>
+                                </div>
+                                <p className="text-[10px] text-muted-foreground italic">Dica: Use `http://localhost:3000` se estiver rodando o bridge no mesmo computador.</p>
+                            </div>
+
+                            <div className={`flex items-center gap-4 p-5 rounded-2xl border transition-all duration-300 ${waStatus === 'connected' ? 'bg-green-500/5 border-green-500/20' : 'bg-muted/10 border-border'}`}>
+                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${waStatus === 'connected' ? 'bg-green-500/10 text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.2)]' : 'bg-secondary text-muted-foreground'}`}>
+                                    <QrCode className="w-6 h-6" />
+                                </div>
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-sm font-bold tracking-tight">{waStatus === 'connected' ? 'Conexão Estabelecida' : waStatus === 'checking' ? 'Verificando...' : 'Desconectado'}</p>
+                                        {waStatus === 'connected' && <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        {waStatus === 'connected' ? 'O Nexus está pronto para verificar números em tempo real.' : 'O Bridge não foi detectado ou o WhatsApp não foi autenticado.'}
+                                    </p>
+                                </div>
+                                {waStatus === 'connected' && (
+                                    <div className="hidden sm:block text-[9px] font-black bg-green-500/20 text-green-400 px-3 py-1.5 rounded-full uppercase tracking-tighter">
+                                        Active Bridge v1.0
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="bg-muted/20 border border-border/50 rounded-2xl p-5 space-y-3">
+                                <h4 className="text-xs font-bold flex items-center gap-2">
+                                    <CheckSquare className="w-3.5 h-3.5 text-blue-400" /> Verificação Automática
+                                </h4>
+                                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                    Ao importar ZIPs ou Pastas, o Nexus usará o Bridge para garantir que o lead realmente tenha WhatsApp antes de salvá-lo.
+                                </p>
+                                <div className="flex items-center gap-2 pt-2">
+                                    <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                    <span className="text-[10px] font-medium">Filtro de Importação Ativo</span>
+                                    <span className="ml-auto text-[9px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">AUTO</span>
+                                </div>
+                            </div>
+
+                            <div className="bg-orange-500/5 border border-orange-500/20 rounded-2xl p-5 space-y-3">
+                                <h4 className="text-xs font-bold flex items-center gap-2 text-orange-400">
+                                    <Database className="w-3.5 h-3.5" /> Limpeza de Base Existente
+                                </h4>
+                                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                    Verifica e remove números que não possuem conta no WhatsApp de todos os clientes já cadastrados.
+                                </p>
+                                <Button
+                                    onClick={handleWhatsAppCleanup}
+                                    disabled={cleaning || waStatus !== 'connected'}
+                                    className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold h-9 text-xs mt-1"
+                                >
+                                    {cleaning ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : "Iniciar Verificação Real"}
+                                </Button>
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl flex gap-3">
+                            <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                            <div className="space-y-1">
+                                <p className="text-xs font-bold text-amber-500">Node.js Necessário</p>
+                                <p className="text-[10px] text-amber-200/60 leading-normal">
+                                    Você precisa rodar o script local que utiliza <strong>Baileys</strong>. O Nexus enviará os números para esse script, que retornará apenas os que são válidos. Isso evita que você tente falar com números fixos ou inválidos.
+                                </p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

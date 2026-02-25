@@ -581,17 +581,19 @@ export default function NewCase() {
 
     try {
       const zip = await JSZip.loadAsync(file);
-      const folderSet = new Set<string>();
-
-      zip.forEach((relativePath, _entry) => {
-        // Get top-level folder name
+      const foldersWithPdfs = new Set<string>();
+      zip.forEach((relativePath, entry) => {
+        if (entry.dir) return;
         const parts = relativePath.split("/");
-        if (parts.length >= 2 && parts[0]) {
-          folderSet.add(parts[0]);
+        if (parts.length >= 2 && parts[0] && relativePath.toLowerCase().endsWith(".pdf")) {
+          // If we have a PDF, the immediate parent is the lead folder
+          // but sometimes the ZIP has root/lead/file.
+          // Let's take the parent of the PDF.
+          foldersWithPdfs.add(parts[parts.length - 2]);
         }
       });
 
-      const folders = Array.from(folderSet).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
+      const folders = Array.from(foldersWithPdfs).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
       setZipFolders(folders);
 
       if (folders.length === 0) {
@@ -614,18 +616,18 @@ export default function NewCase() {
     const filesArray = Array.from(files);
     setFolderFiles(filesArray);
 
-    const folderSet = new Set<string>();
+    const foldersWithPdfs = new Set<string>();
     filesArray.forEach(file => {
-      const path = (file as any).webkitRelativePath || file.name;
-      const parts = path.split("/");
-      // If we selected a folder, the path usually starts with 'folderName/subFolder/file'
-      // We want the 'subFolder' if it exists, otherwise the 'folderName'
-      if (parts.length >= 2) {
-        folderSet.add(parts[parts.length - 2]);
+      if (file.name.toLowerCase().endsWith(".pdf")) {
+        const path = (file as any).webkitRelativePath || file.name;
+        const parts = path.split("/");
+        if (parts.length >= 2) {
+          foldersWithPdfs.add(parts[parts.length - 2]);
+        }
       }
     });
 
-    const folders = Array.from(folderSet).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
+    const folders = Array.from(foldersWithPdfs).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
     setZipFolders(folders);
 
     if (folders.length === 0) {
