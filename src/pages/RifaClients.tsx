@@ -50,6 +50,16 @@ export default function RifaClients() {
         toast.success("Todas as fichas foram excluídas.");
     };
 
+    const exportToFile = (content: string, filename: string) => {
+        const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
     const handleExportPhones = () => {
         const withPhone = fichas.filter(f => f.celular && f.celular.trim().length > 0);
         if (withPhone.length === 0) {
@@ -57,14 +67,29 @@ export default function RifaClients() {
             return;
         }
         const phones = withPhone.map(f => f.celular!.replace(/\D/g, "")).join("\n");
-        const blob = new Blob([phones], { type: "text/plain;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `celulares-rifas-${new Date().toISOString().split('T')[0]}.txt`;
-        a.click();
-        URL.revokeObjectURL(url);
+        exportToFile(phones, `celulares-rifas-${new Date().toISOString().split('T')[0]}.txt`);
         toast.success(`${withPhone.length} celular(es) exportado(s)!`);
+    };
+
+    const handleExportEmails = () => {
+        const withEmail = fichas.filter(f => f.email && f.email.trim().length > 0);
+        if (withEmail.length === 0) {
+            toast.error("Nenhuma ficha possui email.");
+            return;
+        }
+        const emails = withEmail.map(f => f.email!.trim()).join("\n");
+        exportToFile(emails, `emails-rifas-${new Date().toISOString().split('T')[0]}.txt`);
+        toast.success(`${withEmail.length} email(s) exportado(s)!`);
+    };
+
+    const handleExportNames = () => {
+        if (fichas.length === 0) {
+            toast.error("Nenhuma ficha cadastrada.");
+            return;
+        }
+        const names = fichas.map(f => f.nome.trim()).join("\n");
+        exportToFile(names, `nomes-rifas-${new Date().toISOString().split('T')[0]}.txt`);
+        toast.success(`${fichas.length} nome(s) exportado(s)!`);
     };
 
     const handleImportLeads = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -179,6 +204,12 @@ export default function RifaClients() {
                         <div className="flex gap-2 flex-wrap">
                             <Button variant="outline" size="sm" onClick={handleExportPhones} className="text-xs">
                                 <Download className="w-4 h-4 mr-1.5" /> Exportar Celulares
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={handleExportEmails} className="text-xs">
+                                <Download className="w-4 h-4 mr-1.5" /> Exportar Emails
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={handleExportNames} className="text-xs">
+                                <Download className="w-4 h-4 mr-1.5" /> Exportar Nomes
                             </Button>
                             <label>
                                 <input type="file" accept=".txt" className="hidden" onChange={handleImportLeads} />
