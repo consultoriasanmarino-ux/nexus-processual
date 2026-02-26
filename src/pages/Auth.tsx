@@ -12,7 +12,7 @@ export default function Auth() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const { setRole, setCallerInfo } = useAuth();
+  const { setRole, setCallerInfo, setRifeiroInfo } = useAuth();
 
   const doLogin = async () => {
     // Hidden gateway login to Supabase
@@ -38,6 +38,7 @@ export default function Auth() {
       if (ok) {
         setRole("admin");
         setCallerInfo(null);
+        setRifeiroInfo(null);
         toast.success("Acesso Admin autorizado!");
       } else {
         toast.error("Erro na conexão com o banco.");
@@ -72,11 +73,37 @@ export default function Auth() {
           name: matchedCaller.name,
           lawyer_ids: matchedCaller.lawyer_ids || [],
         });
+        setRifeiroInfo(null);
         toast.success(`Bem-vindo, ${matchedCaller.name}!`);
-      } else {
-        await supabase.auth.signOut();
-        toast.error("Usuário ou senha incorretos.");
+        setLoading(false);
+        return;
       }
+
+      // 3. Check if it's a rifeiro
+      const { data: rifeiros } = await supabase
+        .from("rifeiros" as any)
+        .select("*")
+        .eq("username", username)
+        .eq("password", password)
+        .eq("active", true);
+
+      const matchedRifeiro = (rifeiros as any[])?.[0];
+
+      if (matchedRifeiro) {
+        setRole("rifeiro");
+        setRifeiroInfo({
+          id: matchedRifeiro.id,
+          name: matchedRifeiro.name,
+        });
+        setCallerInfo(null);
+        toast.success(`Bem-vindo, ${matchedRifeiro.name}!`);
+        setLoading(false);
+        return;
+      }
+
+      // No match found
+      await supabase.auth.signOut();
+      toast.error("Usuário ou senha incorretos.");
     } catch (err) {
       console.error("Auth error:", err);
       toast.error("Erro ao validar acesso.");

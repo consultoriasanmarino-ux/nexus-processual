@@ -109,3 +109,45 @@ export const STATUS_OPTIONS = [
 export function getStatusInfo(status: string) {
   return STATUS_OPTIONS.find((s) => s.value === status) ?? STATUS_OPTIONS[0];
 }
+
+export interface Rifeiro {
+  id: string;
+  user_id: string;
+  name: string;
+  username: string;
+  password: string;
+  active: boolean;
+  created_at: string;
+}
+
+export interface RifaFicha {
+  id: string;
+  user_id: string;
+  source: string | null;
+  username: string | null;
+  nome: string;
+  celular: string | null;
+  email: string | null;
+  cpf: string | null;
+  birth_date: string | null;
+  income: string | null;
+  profession: string | null;
+  vehicles: string | null;
+  banks: string | null;
+  phones_extra: string | null;
+  notes: string | null;
+  status: string;
+  created_at: string;
+}
+
+export const RIFA_STATUS_OPTIONS = [
+  { value: "nova", label: "Nova", color: "bg-info" },
+  { value: "em_contato", label: "Em Contato", color: "bg-warning" },
+  { value: "aguardando", label: "Aguardando", color: "bg-muted" },
+  { value: "convertida", label: "Convertida", color: "bg-success" },
+  { value: "descartada", label: "Descartada", color: "bg-destructive" },
+] as const;
+
+export function getRifaStatusInfo(status: string) {
+  return RIFA_STATUS_OPTIONS.find((s) => s.value === status) ?? RIFA_STATUS_OPTIONS[0];
+}

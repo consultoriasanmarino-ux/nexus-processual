@@ -2,12 +2,17 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 
-export type UserRole = "admin" | "caller";
+export type UserRole = "admin" | "caller" | "rifeiro";
 
 export interface CallerInfo {
   id: string;
   name: string;
   lawyer_ids: string[];
+}
+
+export interface RifeiroInfo {
+  id: string;
+  name: string;
 }
 
 interface AuthContextType {
@@ -18,8 +23,11 @@ interface AuthContextType {
   setRole: (r: UserRole) => void;
   callerInfo: CallerInfo | null;
   setCallerInfo: (info: CallerInfo | null) => void;
+  rifeiroInfo: RifeiroInfo | null;
+  setRifeiroInfo: (info: RifeiroInfo | null) => void;
   isAdmin: boolean;
   isCaller: boolean;
+  isRifeiro: boolean;
   signOut: () => Promise<void>;
 }
 
@@ -37,6 +45,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const [callerInfo, setCallerInfoState] = useState<CallerInfo | null>(() => {
     const stored = localStorage.getItem("nexus_caller");
+    return stored ? JSON.parse(stored) : null;
+  });
+
+  const [rifeiroInfo, setRifeiroInfoState] = useState<RifeiroInfo | null>(() => {
+    const stored = localStorage.getItem("nexus_rifeiro");
     return stored ? JSON.parse(stored) : null;
   });
 
@@ -70,17 +83,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const setRifeiroInfo = (info: RifeiroInfo | null) => {
+    setRifeiroInfoState(info);
+    if (info) {
+      localStorage.setItem("nexus_rifeiro", JSON.stringify(info));
+    } else {
+      localStorage.removeItem("nexus_rifeiro");
+    }
+  };
+
   const signOut = async () => {
     localStorage.removeItem("nexus_role");
     localStorage.removeItem("nexus_caller");
+    localStorage.removeItem("nexus_rifeiro");
     await supabase.auth.signOut();
   };
 
   const isAdmin = role === "admin";
   const isCaller = role === "caller";
+  const isRifeiro = role === "rifeiro";
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signOut, role, setRole, callerInfo, setCallerInfo, isAdmin, isCaller }}>
+    <AuthContext.Provider value={{ user, session, loading, signOut, role, setRole, callerInfo, setCallerInfo, rifeiroInfo, setRifeiroInfo, isAdmin, isCaller, isRifeiro }}>
       {children}
     </AuthContext.Provider>
   );

@@ -76,6 +76,7 @@ async function connectToWhatsApp() {
 
 // Routes
 app.get('/status', (req, res) => {
+    console.log('GET /status - Checking bridge status');
     res.json({
         active: connectionStatus === 'connected',
         status: connectionStatus,
@@ -85,6 +86,7 @@ app.get('/status', (req, res) => {
 });
 
 app.post('/verify', async (req, res) => {
+    console.log('POST /verify - Verifying numbers');
     if (connectionStatus !== 'connected') {
         return res.status(503).json({ error: 'WhatsApp não conectado' });
     }
